@@ -9,7 +9,7 @@ test.py
 a2c.py
 ppo.py
 
-progress
+progress*
 progress_deep_q
 progress_deep_q_lunar
 progress_deep_q_target
