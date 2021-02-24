@@ -8,7 +8,7 @@ test_fun.py
 test.py
 a2c.py
 
-progress
+progress*
 progress_deep_q
 progress_deep_q_lunar
 progress_deep_q_target
