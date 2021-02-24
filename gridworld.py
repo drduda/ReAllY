@@ -21,14 +21,12 @@ class TabularQ(object):
     def __init__(self, h, w, action_space):
         self.action_space = action_space
         # todo proper Initialization?
-        self.q_values = np.random.random((1, h, w, action_space))
+        self.q_values = np.random.random((h, w, action_space))
 
     def __call__(self, state):
-        ## # TODO:
-        h = int(state[0][0])
-        w = int(state[0][1])
+        state = state.astype(int)
         output = {}
-        output["q_values"] = self.q_values[:, h, w, :]
+        output["q_values"] = self.q_values[state[:, 0], state[:, 1], :]
         return output
 
     # # TODO:
@@ -106,4 +104,9 @@ if __name__ == "__main__":
 
         # sample data to optimize on from buffer
         sample_dict = manager.sample(sample_size)
+
+        # Optimize q values
+        # Get q_values of next states
+        q_values_next_state = agent.max_q(sample_dict['state_new'])
         pass
+
