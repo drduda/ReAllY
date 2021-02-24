@@ -20,7 +20,7 @@ Have fun!!!!
 class TabularQ(object):
     def __init__(self, h, w, action_space):
         self.action_space = action_space
-        self.q_values = np.random.random((action_space, h, w))
+        self.q_values = np.random.random((h, w, action_space))
 
     def __call__(self, state):
         ## # TODO:
@@ -99,4 +99,7 @@ if __name__ == "__main__":
         # Gives you state action reward trajetories
         data = manager.get_data()
         manager.store_in_buffer(data)
-        pass
+
+        # sample data to optimize on from buffer
+        sample_dict = manager.sample(sample_size)
+
