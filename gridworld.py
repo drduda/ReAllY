@@ -29,12 +29,11 @@ class TabularQ(object):
         output["q_values"] = self.q_values[state[:, 0], state[:, 1], :]
         return output
 
-    # # TODO:
     def get_weights(self):
-        return None
+        return self.q_values
 
     def set_weights(self, q_vals):
-        pass
+        self.q_values = q_vals
 
     # what else do you need?
 
@@ -75,6 +74,10 @@ if __name__ == "__main__":
     optim_batch_size = 8
     saving_after = 5
 
+    learning_rate = 0.1
+    discount = .98
+
+
     # keys for replay buffer -> what you will need for optimization
     optim_keys = ["state", "action", "reward", "state_new", "not_done"]
 
@@ -101,12 +104,24 @@ if __name__ == "__main__":
         data = manager.get_data()
         manager.store_in_buffer(data)
 
-        # sample data to optimize on from buffer
+        # Sample experience
         sample_dict = manager.sample(sample_size)
-        state_new = sample_dict['state_new']
-        action_new = agent.act(state_new)
+        state_t = sample_dict['state']
+        action_t = sample_dict['action']
 
-        # Get q values of next state
-        q_values_next_state = agent.q_val(state_new, action_new)
-        pass
+        q_values_t = agent.q_val(state_t, action_t)
+
+        #todo not_done
+
+        # Get q_values of t=1
+        q_values_t_1 = agent.max_q(sample_dict['state_new'])
+
+        # Update q values
+        delta = sample_dict['reward'] + discount * q_values_t_1 - q_values_t
+        q_values_updated = q_values_t + learning_rate * delta
+
+        # Put updated q values into agent
+        weights = agent.get_weights()
+        weights[state_t[:, 0], state_t[:, 1], action_t] = q_values_updated
+        agent.set_weights(weights)
 
