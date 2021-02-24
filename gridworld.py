@@ -103,9 +103,10 @@ if __name__ == "__main__":
 
         # sample data to optimize on from buffer
         sample_dict = manager.sample(sample_size)
+        state_new = sample_dict['state_new']
+        action_new = agent.act(state_new)
 
-        # Optimize q values
-        # Get q_values of next states
-        q_values_next_state = agent.max_q(sample_dict['state_new'])
+        # Get q values of next state
+        q_values_next_state = agent.q_val(state_new, action_new)
         pass
 
