@@ -20,20 +20,20 @@ Have fun!!!!
 class TabularQ(object):
     def __init__(self, h, w, action_space):
         self.action_space = action_space
-        # todo proper Initialization?
-        self.q_values = np.random.random((h, w, action_space))
+        self.q_values = np.random.random((action_space, h, w))
 
     def __call__(self, state):
-        state = state.astype(int)
+        ## # TODO:
         output = {}
-        output["q_values"] = self.q_values[state[:, 0], state[:, 1], :]
+        output["q_values"] = np.random.normal(size=(1, self.action_space))
         return output
 
+    # # TODO:
     def get_weights(self):
-        return self.q_values
+        return None
 
     def set_weights(self, q_vals):
-        self.q_values = q_vals
+        pass
 
     # what else do you need?
 
@@ -42,8 +42,8 @@ if __name__ == "__main__":
     action_dict = {0: "UP", 1: "RIGHT", 2: "DOWN", 3: "LEFT"}
 
     env_kwargs = {
-        "height": 10,
-        "width": 10,
+        "height": 3,
+        "width": 4,
         "action_dict": action_dict,
         "start_position": (2, 0),
         "reward_position": (0, 3),
@@ -59,8 +59,7 @@ if __name__ == "__main__":
         "environment": GridWorld,
         "num_parallel": 2,
         "total_steps": 100,
-        "model_kwargs": model_kwargs,
-        "env_kwargs" : env_kwargs
+        "model_kwargs": model_kwargs
         # and more
     }
 
@@ -74,10 +73,6 @@ if __name__ == "__main__":
     sample_size = 100
     optim_batch_size = 8
     saving_after = 5
-
-    learning_rate = 0.1
-    discount = .98
-
 
     # keys for replay buffer -> what you will need for optimization
     optim_keys = ["state", "action", "reward", "state_new", "not_done"]
@@ -104,25 +99,4 @@ if __name__ == "__main__":
         # Gives you state action reward trajetories
         data = manager.get_data()
         manager.store_in_buffer(data)
-
-        # Sample experience
-        sample_dict = manager.sample(sample_size)
-        state_t = sample_dict['state']
-        action_t = sample_dict['action']
-
-        q_values_t = agent.q_val(state_t, action_t)
-
-        #todo not_done
-
-        # Get q_values of t=1
-        q_values_t_1 = agent.max_q(sample_dict['state_new'])
-
-        # Update q values
-        delta = sample_dict['reward'] + discount * q_values_t_1 - q_values_t
-        q_values_updated = q_values_t + learning_rate * delta
-
-        # Put updated q values into agent
-        weights = agent.get_weights()
-        weights[state_t[:, 0], state_t[:, 1], action_t] = q_values_updated
-        agent.set_weights(weights)
-
+        pass
