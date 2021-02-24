@@ -21,14 +21,14 @@ class TabularQ(object):
     def __init__(self, h, w, action_space):
         self.action_space = action_space
         # todo proper Initialization?
-        self.q_values = np.random.random((h, w, action_space))
+        self.q_values = np.random.random((1, h, w, action_space))
 
     def __call__(self, state):
         ## # TODO:
         h = int(state[0][0])
         w = int(state[0][1])
         output = {}
-        output["q_values"] = [self.q_values[h, w, :]]
+        output["q_values"] = self.q_values[:, h, w, :]
         return output
 
     # # TODO:
@@ -105,4 +105,4 @@ if __name__ == "__main__":
 
         # sample data to optimize on from buffer
         sample_dict = manager.sample(sample_size)
-
+        pass
