@@ -4,6 +4,7 @@ import ray
 from really import SampleManager
 from gridworlds import GridWorld
 import os
+from datetime import datetime
 
 
 """
@@ -36,6 +37,22 @@ class TabularQ(object):
         self.q_values = q_vals
 
     # what else do you need?
+    def save(self, filepath, **kwargs):
+        if not os.path.exists(filepath):
+            os.makedirs(filepath)
+
+        filename = datetime.now().strftime("%Y-%m-%d_%H-%M") + '_gridworld_weights.npy'
+
+        with open(os.path.join(filepath, filename), 'wb') as f:
+            np.save(f, self.q_values)
+
+    def save_weights(self, filepath, **kwargs):
+        self.save(filepath, **kwargs)
+
+    def load_weights(self, filepath, **kwargs):
+        with open(filepath, 'rb') as f:
+            self.q_values = np.load(f)
+        self.action_space = self.q_values.shape[-1]
 
 
 if __name__ == "__main__":
@@ -73,6 +90,7 @@ if __name__ == "__main__":
     sample_size = 100
     optim_batch_size = 8
     saving_after = 5
+    test_episodes = 5
 
     learning_rate = 0.1
     discount = .98
@@ -85,14 +103,14 @@ if __name__ == "__main__":
     manager.initilize_buffer(buffer_size, optim_keys)
 
     # initilize progress aggregator
-    #saving_path = os.getcwd() + "/progress_test"
-    #manager.initialize_aggregator(
-    #    path=saving_path, saving_after=5, aggregator_keys=["loss", "time_steps"]
-    #)
+    saving_path = os.getcwd() + "/progress_gridworld"
+    manager.initialize_aggregator(
+        path=saving_path, saving_after=saving_after, aggregator_keys=["loss", "time_steps"]
+    )
 
     # initial testing:
-    #print("test before training: ")
-    #manager.test(test_steps, do_print=True)
+    print("test before training: ")
+    manager.test(test_steps, do_print=True)
 
     # get initial agent
     agent = manager.get_agent()
@@ -121,7 +139,26 @@ if __name__ == "__main__":
         q_values_updated = q_values_t + learning_rate * delta
 
         # Put updated q values into agent
-        weights = agent.get_weights()
-        weights[state_t[:, 0], state_t[:, 1], action_t] = q_values_updated
-        agent.set_weights(weights)
+        new_weights = agent.get_weights().copy()
+        new_weights[state_t[:, 0], state_t[:, 1], action_t] = q_values_updated
+        agent.set_weights(new_weights)
+
+        manager.set_agent(new_weights)
+        agent = manager.get_agent()
+
+        time_steps = manager.test(test_steps)
+
+        manager.update_aggregator(loss=delta, time_steps=time_steps)
+
+        print(
+            f"epoch ::: {e}  loss ::: {np.mean([np.mean(l) for l in delta])}   avg env steps ::: {np.mean(time_steps)}"
+        )
+
+        if e % saving_after == 0:
+            manager.save_model(saving_path, e)
+
+    #manager.load_model(saving_path)
+    print("done")
+    print("testing optimized agent")
+    manager.test(test_steps, test_episodes=test_episodes, render=True)
 
