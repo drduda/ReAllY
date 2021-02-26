@@ -76,7 +76,9 @@ if __name__ == "__main__":
         "environment": GridWorld,
         "num_parallel": 2,
         "total_steps": 100,
-        "model_kwargs": model_kwargs
+        "model_kwargs": model_kwargs,
+        "action_sampling_type": "epsilon_greedy",
+        "epsilon": 1,
         # and more
     }
 
@@ -144,11 +146,13 @@ if __name__ == "__main__":
         agent.set_weights(new_weights)
 
         manager.set_agent(new_weights)
+        manager.set_epsilon(agent.epsilon-0.05)
         agent = manager.get_agent()
 
         time_steps = manager.test(test_steps)
 
         manager.update_aggregator(loss=delta, time_steps=time_steps)
+
 
         print(
             f"epoch ::: {e}  loss ::: {np.mean([np.mean(l) for l in delta])}   avg env steps ::: {np.mean(time_steps)}"
