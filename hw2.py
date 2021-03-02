@@ -38,7 +38,8 @@ if __name__ == "__main__":
     # initialize
     ray.init(log_to_driver=False)
     manager = SampleManager(DQN, 'CartPole-v0',
-                            num_parallel=3, total_steps=100)
+                            #todo change num_parallel
+                            num_parallel=1, total_steps=100)
 
     buffer_size = 2000
     epochs = 10
@@ -62,6 +63,7 @@ if __name__ == "__main__":
 
     # get initial agent
     agent = manager.get_agent()
+    target_agent = manager.get_agent()
 
     for e in range(epochs):
         print("collecting experience..")
@@ -76,15 +78,27 @@ if __name__ == "__main__":
 
         print("optimizing... ")
 
+
+
         for state, action, reward, state_new, not_done in \
             zip(data_dict['state'],
                 data_dict['action'],
                 data_dict['reward'],
                 data_dict['state_new'],
                 data_dict['not_done']):
-            #q_net = model(state)
-            #q_target = reward + gamma * np.max(q_net)
-            print("hey")
+
+
+            not_done = tf.cast(not_done, tf.bool)
+            q_new = tf.where(not_done, target_agent.max_q(state_new), 0)
+
+            # Don't put the target into GradientTape context
+            q_target = reward + gamma * q_new
+            with tf.GradientTape() as t:
+                q_output = agent.q_val(state, action)
+                loss = tf.keras.losses.MSE(q_target, q_output)
+
+
+
         #q_target = data_dict['reward'] + gamma * np.max(model(data_dict['state']))
 
 
