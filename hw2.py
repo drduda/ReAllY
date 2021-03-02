@@ -76,10 +76,16 @@ if __name__ == "__main__":
 
         print("optimizing... ")
 
-
-        #output = model()
+        for state, action, reward, state_new, not_done in \
+            zip(data_dict['state'],
+                data_dict['action'],
+                data_dict['reward'],
+                data_dict['state_new'],
+                data_dict['not_done']):
+            #q_net = model(state)
+            #q_target = reward + gamma * np.max(q_net)
+            print("hey")
         #q_target = data_dict['reward'] + gamma * np.max(model(data_dict['state']))
 
-        print("ey")
 
 
