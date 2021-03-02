@@ -33,21 +33,20 @@ if __name__ == "__main__":
 
     tf.keras.backend.set_floatx('float64')
 
-    model = DQN()
-
     # initialize
     ray.init(log_to_driver=False)
+    # todo change num_parallel
     manager = SampleManager(DQN, 'CartPole-v0',
-                            #todo change num_parallel
                             num_parallel=1, total_steps=100)
 
     buffer_size = 2000
     epochs = 10
     saving_path = os.path.join(os.getcwd(), '/progress_hw2')
     saving_after = 5
-    sample_size = 1000
+    sample_size = 100
     optim_batch_size = 8
     gamma = .98
+    update_interval = 4
 
     # keys for replay buffer -> what you will need for optimization
     optim_keys = ["state", "action", "reward", "state_new", "not_done"]
@@ -63,9 +62,12 @@ if __name__ == "__main__":
 
     # get initial agent
     agent = manager.get_agent()
-    target_agent = manager.get_agent()
+
+    optimizer = tf.keras.optimizers.Adam()
 
     for e in range(epochs):
+        if e % update_interval == 0:
+            target_agent = manager.get_agent()
         print("collecting experience..")
 
         # Gives you state action reward trajetories
@@ -77,8 +79,6 @@ if __name__ == "__main__":
         data_dict = dict_to_dict_of_datasets(sample_dict, batch_size=optim_batch_size)
 
         print("optimizing... ")
-
-
 
         for state, action, reward, state_new, not_done in \
             zip(data_dict['state'],
@@ -93,13 +93,17 @@ if __name__ == "__main__":
 
             # Don't put the target into GradientTape context
             q_target = reward + gamma * q_new
-            with tf.GradientTape() as t:
+            with tf.GradientTape() as tape:
                 q_output = agent.q_val(state, action)
                 loss = tf.keras.losses.MSE(q_target, q_output)
 
+            gradients = tape.gradient(loss, agent.model.trainable_variables)
+            optimizer.apply_gradients(zip(gradients, agent.model.trainable_variables))
+
+        # Update the agent
+        manager.set_agent(agent.model.trainable_variables)
+        agent = manager.get_agent()
 
 
-        #q_target = data_dict['reward'] + gamma * np.max(model(data_dict['state']))
 
-
-
+print("done")
