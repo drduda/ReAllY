@@ -2,22 +2,34 @@ import numpy as np
 import ray
 from really import SampleManager
 import tensorflow as tf
+from tensorflow.keras.layers import Dense, LeakyReLU
 import gym
 import os
 from datetime import datetime
 
+
 class DQN(tf.Module):
-    def __init__(self):
+    def __init__(self, action_space=2):
         super().__init__()
+        self.action_space = action_space
+        self.layers = [
+            Dense(16),
+            LeakyReLU(),
+            Dense(32),
+            LeakyReLU(),
+            Dense(32),
+            LeakyReLU(),
+            Dense(self.action_space, activation=None)
+        ]
 
     def __call__(self, state):
-        pass
+        output = {}
+        q = state
+        for layer in self.layers:
+            q = layer(q)
+        output["q_values"] = q
+        return output
 
-    def set_weights(self, weights):
-        pass
-
-    def get_weights(self):
-        pass
 
 if __name__ == "__main__":
 
