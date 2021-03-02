@@ -7,6 +7,8 @@ import gym
 import os
 from datetime import datetime
 
+from really.utils import dict_to_dict_of_datasets
+
 
 class DQN(tf.keras.Model):
     def __init__(self, action_space=2, input_shape=2):
@@ -29,17 +31,22 @@ class DQN(tf.keras.Model):
 
 if __name__ == "__main__":
 
+    tf.keras.backend.set_floatx('float64')
+
     model = DQN()
 
     # initialize
     ray.init(log_to_driver=False)
     manager = SampleManager(DQN, 'CartPole-v0',
-                            num_parallel=5, total_steps=100)
+                            num_parallel=3, total_steps=100)
 
     buffer_size = 2000
     epochs = 10
     saving_path = os.path.join(os.getcwd(), '/progress_hw2')
     saving_after = 5
+    sample_size = 1000
+    optim_batch_size = 8
+    gamma = .98
 
     # keys for replay buffer -> what you will need for optimization
     optim_keys = ["state", "action", "reward", "state_new", "not_done"]
@@ -62,3 +69,17 @@ if __name__ == "__main__":
         # Gives you state action reward trajetories
         data = manager.get_data()
         manager.store_in_buffer(data)
+
+        sample_dict = manager.sample(sample_size)
+        print(f"collected data for: {sample_dict.keys()}")
+        data_dict = dict_to_dict_of_datasets(sample_dict, batch_size=optim_batch_size)
+
+        print("optimizing... ")
+
+
+        #output = model()
+        #q_target = data_dict['reward'] + gamma * np.max(model(data_dict['state']))
+
+        print("ey")
+
+
