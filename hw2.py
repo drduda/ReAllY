@@ -35,9 +35,8 @@ if __name__ == "__main__":
 
     # initialize
     ray.init(log_to_driver=False)
-    # todo change num_parallel
     manager = SampleManager(DQN, 'CartPole-v0',
-                            num_parallel=1, total_steps=100)
+                            num_parallel=3, total_steps=100)
 
     buffer_size = 2000
     epochs = 10
@@ -62,6 +61,14 @@ if __name__ == "__main__":
 
     # get initial agent
     agent = manager.get_agent()
+
+    while True:
+        # Check if buffer is already filled
+        if len(manager.buffer.buffer[manager.buffer.keys[0]]) >= manager.buffer.size:
+            break
+        # Gives you state action reward trajetories
+        data = manager.get_data()
+        manager.store_in_buffer(data)
 
     optimizer = tf.keras.optimizers.Adam()
 
