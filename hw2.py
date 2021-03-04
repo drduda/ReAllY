@@ -40,7 +40,7 @@ if __name__ == "__main__":
                             action_sampling_type="thompson")
 
     buffer_size = 2000
-    epochs = 40
+    epochs = 100
     saving_path = os.getcwd() + "/progress_test"
     saving_after = 5
     sample_size = 100
