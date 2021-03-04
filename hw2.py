@@ -36,10 +36,11 @@ if __name__ == "__main__":
     # initialize
     ray.init(log_to_driver=False)
     manager = SampleManager(DQN, 'CartPole-v0',
-                            num_parallel=3, total_steps=100)
+                            num_parallel=3, total_steps=100,
+                            action_sampling_type="thompson")
 
     buffer_size = 2000
-    epochs = 10
+    epochs = 40
     saving_path = os.path.join(os.getcwd(), '/progress_hw2')
     saving_after = 5
     sample_size = 100
@@ -47,6 +48,9 @@ if __name__ == "__main__":
     gamma = .98
     update_interval = 4
     test_steps = 1000
+    temperature = 1.5
+    temperature_update = 0.98 #new_temp = old_temp*temp_update
+    temperature_min = 0.5
 
     # keys for replay buffer -> what you will need for optimization
     optim_keys = ["state", "action", "reward", "state_new", "not_done"]
@@ -61,7 +65,9 @@ if __name__ == "__main__":
     )
 
     # get initial agent
+    manager.set_temperature(temperature)
     agent = manager.get_agent()
+
 
     while True:
         # Check if buffer is already filled
@@ -115,11 +121,16 @@ if __name__ == "__main__":
         manager.set_agent(agent.get_weights())
         agent = manager.get_agent()
 
+        # Update temperature
+        if temperature > temperature_min:
+            temperature = temperature*temperature_update
+            manager.set_temperature(temperature)
+
         # Update aggregator
         time_steps = manager.test(test_steps)
         manager.update_aggregator(loss=total_loss, time_steps=time_steps)
         print(
-            f"epoch ::: {e}  loss ::: {np.mean(total_loss)}   avg env steps ::: {np.mean(time_steps)}"
+            f"epoch ::: {e}  loss ::: {np.mean(total_loss)}   avg env steps ::: {np.mean(time_steps)}   temperature ::: {temperature}"
         )
 
 
