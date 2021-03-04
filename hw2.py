@@ -46,6 +46,7 @@ if __name__ == "__main__":
     optim_batch_size = 8
     gamma = .98
     update_interval = 4
+    test_steps = 1000
 
     # keys for replay buffer -> what you will need for optimization
     optim_keys = ["state", "action", "reward", "state_new", "not_done"]
@@ -66,6 +67,8 @@ if __name__ == "__main__":
         # Check if buffer is already filled
         if len(manager.buffer.buffer[manager.buffer.keys[0]]) >= manager.buffer.size:
             break
+        print("Filling buffer before training..")
+
         # Gives you state action reward trajetories
         data = manager.get_data()
         manager.store_in_buffer(data)
@@ -86,7 +89,7 @@ if __name__ == "__main__":
         data_dict = dict_to_dict_of_datasets(sample_dict, batch_size=optim_batch_size)
 
         print("optimizing... ")
-
+        total_loss = []
         for state, action, reward, state_new, not_done in \
             zip(data_dict['state'],
                 data_dict['action'],
@@ -104,6 +107,7 @@ if __name__ == "__main__":
                 q_output = agent.q_val(state, action)
                 loss = tf.keras.losses.MSE(q_target, q_output)
 
+            total_loss.append(loss)
             gradients = tape.gradient(loss, agent.model.trainable_variables)
             optimizer.apply_gradients(zip(gradients, agent.model.trainable_variables))
 
@@ -111,5 +115,16 @@ if __name__ == "__main__":
         manager.set_agent(agent.get_weights())
         agent = manager.get_agent()
 
+        # Update aggregator
+        time_steps = manager.test(test_steps)
+        manager.update_aggregator(loss=total_loss, time_steps=time_steps)
+        print(
+            f"epoch ::: {e}  loss ::: {np.mean(total_loss)}   avg env steps ::: {np.mean(time_steps)}"
+        )
 
-print("done")
+
+# and load models
+    manager.load_model(saving_path)
+    print("done")
+    print("testing optimized agent")
+    manager.test(test_steps, test_episodes=4, render=True)
