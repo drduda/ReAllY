@@ -101,9 +101,8 @@ if __name__ == "__main__":
             optimizer.apply_gradients(zip(gradients, agent.model.trainable_variables))
 
         # Update the agent
-        manager.set_agent(agent.model.trainable_variables)
+        manager.set_agent(agent.get_weights())
         agent = manager.get_agent()
-
 
 
 print("done")
