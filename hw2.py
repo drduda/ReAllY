@@ -19,7 +19,7 @@ class DQN(tf.keras.Model):
         self.d3 = Dense(32, activation=LeakyReLU())
         self.dout = Dense(self.action_space, activation=None)
 
-    def __call__(self, state):
+    def call(self, state):
         output = {}
         hidden = self.d1(state)
         hidden = self.d2(hidden)
@@ -41,7 +41,7 @@ if __name__ == "__main__":
 
     buffer_size = 2000
     epochs = 40
-    saving_path = os.path.join(os.getcwd(), '/progress_hw2')
+    saving_path = os.getcwd() + "/progress_test"
     saving_after = 5
     sample_size = 100
     optim_batch_size = 8
@@ -132,6 +132,10 @@ if __name__ == "__main__":
         print(
             f"epoch ::: {e}  loss ::: {np.mean(total_loss)}   avg env steps ::: {np.mean(time_steps)}   temperature ::: {temperature}"
         )
+
+        if e % saving_after == 0:
+            # you can save models
+            manager.save_model(saving_path, e)
 
 
 # and load models
