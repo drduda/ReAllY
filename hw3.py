@@ -37,6 +37,7 @@ class ActorCritic(tf.keras.Model):
         self.action_dimension = action_dimension
         self.min_action = min_action
         self.max_action = max_action
+
         self.d1 = Dense(16, activation=LeakyReLU())
         self.d2 = Dense(32, activation=LeakyReLU())
         self.dout = Dense(self.action_dimension*2, activation=None)
@@ -61,25 +62,18 @@ if __name__ == "__main__":
     ray.init(log_to_driver=False)
     manager = SampleManager(ActorCritic, 'LunarLanderContinuous-v2',
                             num_parallel=1, total_steps=100,
-                            action_sampling_type="continous_normal_diagonal")
+                            action_sampling_type="continous_normal_diagonal",
+                            #todo check if monte carlo is correct
+                            #todo what about gamma??
+                            returns=['monte_carlo', 'value_estimate'])
 
-    buffer_size = 2000
     epochs = 100
     saving_path = os.getcwd() + "/hw3_results"
     saving_after = 5
     sample_size = 100
     optim_batch_size = 8
     gamma = .98
-    update_interval = 4
     test_steps = 1000
-    temperature = 1.5
-    temperature_update = 0.98  # new_temp = old_temp*temp_update
-    temperature_min = 0.5
-
-
-    # keys for replay buffer -> what you will need for optimization
-    optim_keys = ["state", "action", "reward", "state_new", "not_done"]
-    manager.initilize_buffer(buffer_size, optim_keys)
 
     agent = manager.get_agent()
 
@@ -88,3 +82,19 @@ if __name__ == "__main__":
     for e in range(epochs):
         sample_dict = manager.sample(sample_size, from_buffer=False)
         print(f"collected data for: {sample_dict.keys()}")
+        data_dict = dict_to_dict_of_datasets(sample_dict, batch_size=optim_batch_size)
+
+        for state, action, reward, state_new, not_done in \
+            zip(data_dict['state'],
+                data_dict['action'],
+                data_dict['reward'],
+                data_dict['state_new'],
+                data_dict['not_done'],
+                data_dict['monte_carlo']):
+
+
+            not_done = tf.cast(not_done, tf.bool)
+            #state_value_new = tf.where(not_done, agent.value_estimate()
+
+        # Calculate advantage q(s,a)-b(s)=r+v(s') -v(s)
+        # Train with mean squard error between value and rewards to go
