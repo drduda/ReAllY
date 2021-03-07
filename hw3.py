@@ -32,13 +32,25 @@ if you are on policy ant need log probabilities to train, be aware you cannot ma
 """
 
 class ActorCritic(tf.keras.Model):
-    def __init__(self, action_space=2, input_shape=8):
+    def __init__(self, action_dimension=2, min_action=-1, max_action=1):
         super().__init__()
+        self.action_dimension = action_dimension
+        self.min_action = min_action
+        self.max_action = max_action
+        self.d1 = Dense(16, activation=LeakyReLU())
+        self.d2 = Dense(32, activation=LeakyReLU())
+        self.dout = Dense(self.action_dimension*2, activation=None)
 
     def call(self, state):
         output = {}
-        output["mu"] = None
-        output["sigma"] = None
+        hidden = self.d1(state)
+        hidden = self.d2(hidden)
+        dout = self.dout(hidden)
+
+        # Clip mu to possible actions spaces
+        output["mu"] = tf.clip_by_value(dout[:, self.action_dimension:], self.min_action, self.max_action)
+        #todo check if really **e is needed
+        output["sigma"] = tf.exp(dout[:, :self.action_dimension])
         return output
 
 if __name__ == "__main__":
