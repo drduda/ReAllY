@@ -38,20 +38,34 @@ class ActorCritic(tf.keras.Model):
         self.min_action = min_action
         self.max_action = max_action
 
+        # Actor net
         self.d1 = Dense(16, activation=LeakyReLU())
         self.d2 = Dense(32, activation=LeakyReLU())
         self.dout = Dense(self.action_dimension*2, activation=None)
 
+        # Critic net
+        self.v1 = Dense(16, activation=LeakyReLU())
+        self.v2 = Dense(16, activation=LeakyReLU())
+        self.vout = Dense(1, activation=None)
+
     def call(self, state):
         output = {}
+
+        # Actor
         hidden = self.d1(state)
         hidden = self.d2(hidden)
         dout = self.dout(hidden)
-
-        # Clip mu to possible actions spaces
+        # Clip mu to the possible actions spaces
         output["mu"] = tf.clip_by_value(dout[:, self.action_dimension:], self.min_action, self.max_action)
         #todo check if really **e is needed
         output["sigma"] = tf.exp(dout[:, :self.action_dimension])
+
+        # Critic
+        hidden = self.v1(state)
+        hidden = self.v2(state)
+        vout = self.vout(state)
+        output['value_estimate'] = vout
+
         return output
 
 if __name__ == "__main__":
@@ -84,17 +98,18 @@ if __name__ == "__main__":
         print(f"collected data for: {sample_dict.keys()}")
         data_dict = dict_to_dict_of_datasets(sample_dict, batch_size=optim_batch_size)
 
-        for state, action, reward, state_new, not_done in \
+        for state, action, reward, state_new, not_done, mc in \
             zip(data_dict['state'],
                 data_dict['action'],
                 data_dict['reward'],
                 data_dict['state_new'],
                 data_dict['not_done'],
-                data_dict['monte_carlo']):
+                data_dict['monte_carlo'],):
 
 
             not_done = tf.cast(not_done, tf.bool)
-            #state_value_new = tf.where(not_done, agent.value_estimate()
+            state_value_new = agent.model(state_new)['value_estimate']
+            state_value_new = tf.where(not_done, state_value_new, 0)
 
         # Calculate advantage q(s,a)-b(s)=r+v(s') -v(s)
         # Train with mean squard error between value and rewards to go
