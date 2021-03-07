@@ -75,7 +75,7 @@ if __name__ == "__main__":
     # initialize
     ray.init(log_to_driver=False)
     manager = SampleManager(ActorCritic, 'LunarLanderContinuous-v2',
-                            num_parallel=1, total_steps=100,
+                            num_parallel=2, total_steps=100,
                             action_sampling_type="continous_normal_diagonal",
                             #todo check if monte carlo is correct
                             #todo what about gamma??
@@ -96,6 +96,16 @@ if __name__ == "__main__":
     for e in range(epochs):
         sample_dict = manager.sample(sample_size, from_buffer=False)
         print(f"collected data for: {sample_dict.keys()}")
+
+        # Shift value estimate by one to the left to get the value estimate of next state
+        state_value_new = tf.roll(sample_dict['value_estimate'], -1, axis=0)
+        not_done = tf.cast(sample_dict['not_done'], tf.bool)
+        state_value_new = tf.where(not_done, state_value_new, 0)
+
+        # Calculate advantate estimate q(s,a)-b(s)=r+v(s')-v(s)
+        advantage_estimate = sample_dict['reward'] + state_value_new - sample_dict['value_estimate']
+        sample_dict['advantage_estimate'] = advantage_estimate
+
         data_dict = dict_to_dict_of_datasets(sample_dict, batch_size=optim_batch_size)
 
         for state, action, reward, state_new, not_done, mc in \
@@ -106,10 +116,6 @@ if __name__ == "__main__":
                 data_dict['not_done'],
                 data_dict['monte_carlo'],):
 
+            pass
 
-            not_done = tf.cast(not_done, tf.bool)
-            state_value_new = agent.model(state_new)['value_estimate']
-            state_value_new = tf.where(not_done, state_value_new, 0)
-
-        # Calculate advantage q(s,a)-b(s)=r+v(s') -v(s)
         # Train with mean squard error between value and rewards to go
