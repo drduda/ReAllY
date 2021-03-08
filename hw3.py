@@ -70,8 +70,6 @@ class ActorCritic(tf.keras.Model):
 
 if __name__ == "__main__":
 
-    tf.keras.backend.set_floatx('float64')
-
     # initialize
     ray.init(log_to_driver=False)
     manager = SampleManager(ActorCritic, 'LunarLanderContinuous-v2',
@@ -79,15 +77,17 @@ if __name__ == "__main__":
                             action_sampling_type="continous_normal_diagonal",
                             #todo check if monte carlo is correct
                             #todo what about gamma??
-                            returns=['monte_carlo', 'value_estimate'])
+                            returns=['monte_carlo', 'value_estimate', 'log_prob'])
 
     epochs = 100
     saving_path = os.getcwd() + "/hw3_results"
     saving_after = 5
     sample_size = 100
     optim_batch_size = 8
-    gamma = .98
+    gamma = .99
     test_steps = 1000
+    # Factor of how much the new policy is allowed to differ from the old one
+    epsilon = 0.2
 
     agent = manager.get_agent()
 
@@ -108,14 +108,31 @@ if __name__ == "__main__":
 
         data_dict = dict_to_dict_of_datasets(sample_dict, batch_size=optim_batch_size)
 
-        for state, action, reward, state_new, not_done, mc in \
+        for state, action, reward, state_new, not_done, mc, advantage_estimate, value_estimate, old_action_prob in \
             zip(data_dict['state'],
                 data_dict['action'],
                 data_dict['reward'],
                 data_dict['state_new'],
                 data_dict['not_done'],
-                data_dict['monte_carlo'],):
+                data_dict['monte_carlo'],
+                data_dict['advantage_estimate'],
+                data_dict['value_estimate'],
+                data_dict['log_prob']):
 
-            pass
 
-        # Train with mean squard error between value and rewards to go
+            with tf.GradientTape() as tape:
+                # Actor loss
+                new_action_prob, entropy = agent.flowing_log_prob(state, action)#todo entropy
+                actor_loss = (new_action_prob/old_action_prob)*advantage_estimate
+                # Clipped Surrogate Objective is negative because of gradient ascent!
+                actor_loss = - tf.minimum(actor_loss, tf.clip_by_value(actor_loss, 1-epsilon, 1+epsilon))
+
+                #todo Train with mean squard error between value and rewards to go
+                loss = actor_loss
+
+            gradients = tape.gradient(loss, agent.model.trainable_variables)
+            optimizer.apply_gradients(zip(gradients, agent.model.trainable_variables))
+
+            # Update the agent
+            manager.set_agent(agent.get_weights())
+            agent = manager.get_agent()
