@@ -20,13 +20,13 @@ class SampleManager:
 
     """
     @args:
-        model: model Object
+        model: model Object, model: tf.keras.Model (or model imitating a tf model) returning dictionary with the possible keys: 'q_values' or 'policy' or 'mus' and 'sigmas' for continuous policies, optional 'value_estimate', containing tensors
         environment: string specifying gym environment or object of custom gym-like (implementing the same methods) environment
         num_parallel: int, number of how many agents to run in parall
         total_steps: int, how many steps to collect for the experience replay
         returns: list of strings specifying what is to be returned by the box
             supported are: 'value_estimate', 'log_prob', 'monte_carlo'
-        actin_sampling_type: string, type of sampling actions, supported are 'epsilon_greedy', 'thompson', or 'continous_normal_diagonal'
+        actin_sampling_type: string, type of sampling actions, supported are 'epsilon_greedy', 'thompson', 'discrete_policy' or 'continuous_normal_diagonal'
 
     @kwargs:
         model_kwargs: dict, optional model initialization specifications
@@ -54,8 +54,6 @@ class SampleManager:
         self.environment = environment
         self.num_parallel = num_parallel
         self.total_steps = total_steps
-        self.returns = returns
-        self.kwargs = kwargs
         self.buffer = None
 
         # create gym / custom gym like environment
@@ -65,16 +63,9 @@ class SampleManager:
             env_kwargs = {}
             if "env_kwargs" in kwargs.keys():
                 env_kwargs = kwargs["env_kwargs"]
-                self.kwargs.pop("env_kwargs")
+                kwargs.pop("env_kwargs")
             self.env_instance = self.env_creator(self.environment, **env_kwargs)
 
-        # initilize empty datasets aggregator
-        self.data = {}
-        self.data["action"] = []
-        self.data["state"] = []
-        self.data["reward"] = []
-        self.data["state_new"] = []
-        self.data["not_done"] = []
 
         # specify input shape if not given
         if not ("input_shape" in kwargs):
@@ -91,6 +82,8 @@ class SampleManager:
             random_weights = self.initialize_weights(self.model, kwargs['input_shape'], kwargs['model_kwargs'])
             kwargs['weights'] = random_weights
 
+        kwargs['test'] = False
+        self.kwargs = kwargs
         ## some checkups
 
         assert self.num_parallel > 0, "num_parallel hast to be greater than 0!"
@@ -99,12 +92,12 @@ class SampleManager:
         # check action sampling type
         if "action_sampling_type" in kwargs.keys():
             type = kwargs["action_sampling_type"]
-            if type not in ["thompson", "epsilon_greedy", "continous_normal_diagonal"]:
+            if type not in ["thompson", "epsilon_greedy", "discrete_policy", "continuous_normal_diagonal"]:
                 print(
-                    f"unsupported sampling type: {type}. assuming thompson sampling instead."
+                    f"unsupported sampling type: {type}. assuming sampling from a discrete policy instead."
                 )
-                self.kwargs["action_sampling_type"] = "thompson"
-            if type == 'continous_normal_diagonal':
+                self.kwargs["action_sampling_type"] = "discrete_policy"
+            if type == 'continuous_normal_diagonal':
                 self.discrete_env = False
                 self.kwargs['discrete_env'] = False
 
@@ -117,10 +110,10 @@ class SampleManager:
         for r in returns:
             if r not in ["log_prob", "monte_carlo", "value_estimate"]:
                 print(f"unsuppoerted return key: {r}")
-                if r == "value_estimate":
+                returns.pop(r)
+            if r == "value_estimate":
                     self.kwargs["value_estimate"] = True
-            else:
-                self.data[r] = []
+        self.returns = returns
 
         # check for runner sampling method:
         # error if both are specified
@@ -154,7 +147,20 @@ class SampleManager:
             # defaults to None, i.e. wait for remote_min_returns to be returned irrespective of time
             self.remote_time_out = None
 
+        self.reset_data()
         # # TODO: print info on setup values
+
+    def reset_data(self):
+        # initilize empty datasets aggregator
+        self.data = {}
+        self.data["action"] = []
+        self.data["state"] = []
+        self.data["reward"] = []
+        self.data["state_new"] = []
+        self.data["not_done"] = []
+        for r in self.returns:
+            self.data[r] = []
+
 
     def initialize_weights(self, model, input_shape, model_kwargs):
         model_inst = model(**model_kwargs)
@@ -172,6 +178,7 @@ class SampleManager:
 
     def get_data(self, do_print=False, total_steps=None):
 
+        self.reset_data()
         if total_steps is not None:
             old_steps = self.total_steps
             self.total_steps = total_steps
@@ -190,22 +197,21 @@ class SampleManager:
             for i in range(self.num_parallel)
         ]
         t = 0
+
+        # initial processes
+        if self.run_episodes:
+            runner_processes = [b.run_n_episodes.remote(self.runner_steps) for b in runner_boxes]
+        else:
+            runner_processes = [b.run_n_steps.remote(self.runner_steps) for b in runner_boxes]
+
         # run as long as not yet reached number of total steps
         while not_done:
 
-            if self.run_episodes:
-                ready, remaining = ray.wait(
-                    [b.run_n_episodes.remote(self.runner_steps) for b in runner_boxes],
-                    num_returns=self.remote_min_returns,
-                    timeout=self.remote_time_out,
+            ready, remaining = ray.wait(
+                runner_processes,
+                num_returns=self.remote_min_returns,
+                timeout=self.remote_time_out
                 )
-            else:
-                ready, remaining = ray.wait(
-                    [b.run_n_steps.remote(self.runner_steps) for b in runner_boxes],
-                    num_returns=self.remote_min_returns,
-                    timeout=self.remote_time_out,
-                )
-
             # boxes returns list of tuples (data_agg, index)
             returns = ray.get(ready)
             results = []
@@ -221,9 +227,16 @@ class SampleManager:
             not_done = self._store(results)
             # get boxes that are alreadey done
             accesed_mapping = map(runner_boxes.__getitem__, indexes)
-            dones = list(accesed_mapping)
-            # concatenate dones and not dones
-            runner_boxes = dones + runner_boxes
+            done_runners = list(accesed_mapping)
+            # create new processes
+            if self.run_episodes:
+                new_processes = [b.run_n_episodes.remote(self.runner_steps) for b in done_runners]
+
+            else:
+                new_processes = [b.run_n_steps.remote(self.runner_steps) for b in done_runners]
+
+            # concatenate old and new processes
+            runner_processes = remaining + new_processes
             t += 1
 
         if total_steps is not None:
@@ -234,7 +247,6 @@ class SampleManager:
     # stores results and asserts if we are done
     def _store(self, results):
         not_done = True
-
         # results is a list of dctinaries
         assert (
             self.data.keys() == results[0].keys()
@@ -263,10 +275,7 @@ class SampleManager:
     def get_agent(self, test=False):
 
         if test:
-            old_e = self.kwargs["epsilon"]
-            old_t = self.kwargs["temperature"]
-            self.kwargs["epsilon"] = 0
-            self.kwargs["temperature"] = 0.0001
+            self.kwargs['test'] = True
 
         # get agent specifications from runner box
         runner_box = RunnerBox.remote(
@@ -281,8 +290,7 @@ class SampleManager:
         agent = Agent(self.model, **agent_kwargs)
 
         if test:
-            self.kwargs["epsilon"] = old_e
-            self.kwargs["temperature"] = old_t
+            self.kwargs['test'] = False
 
         return agent
 
@@ -314,7 +322,6 @@ class SampleManager:
 
         env = self.env_instance
         agent = self.get_agent(test=True)
-        # agent.epsilon = 1
 
         # get evaluation specs
         return_time = False
@@ -393,8 +400,8 @@ class SampleManager:
                 )
             return rewards
 
-    def initialize_aggregator(self, path, saving_after=10, aggregator_keys=["loss"]):
-        self.agg = Smoothing_aggregator(path, saving_after, aggregator_keys)
+    def initialize_aggregator(self, path, saving_after=10, aggregator_keys=["loss"], max_size=5, init_epoch=0):
+        self.agg = Smoothing_aggregator(path, saving_after, aggregator_keys, max_size, init_epoch)
 
     def update_aggregator(self, **kwargs):
         self.agg.update(**kwargs)

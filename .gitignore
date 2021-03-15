@@ -7,8 +7,9 @@ deep_q_target_cycle.py
 test_fun.py
 test.py
 a2c.py
+ppo.py
 
-progress*
+progress
 progress_deep_q
 progress_deep_q_lunar
 progress_deep_q_target
@@ -26,7 +27,6 @@ really/__pycache__
 __pycache__/
 *.py[cod]
 *$py.class
-*.pyc
 
 # C extensions
 *.so
@@ -161,5 +161,3 @@ dmypy.json
 
 # Cython debug symbols
 cython_debug/
-
-.idea
