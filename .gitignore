@@ -9,15 +9,8 @@ test.py
 a2c.py
 ppo.py
 
-progress
-progress_deep_q
-progress_deep_q_lunar
-progress_deep_q_target
-progress_deep_q_target_cycle
-progress_tabq
-progress_a2c
+progress_*
 grid_q.py
-progress_test
 *.log
 
 
