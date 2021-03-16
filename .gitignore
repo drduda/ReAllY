@@ -16,7 +16,7 @@ grid_q.py
 
 
 # Byte-compiled / optimized / DLL files
-really/__pycache__
+really/__pycache__*
 __pycache__/
 *.py[cod]
 *$py.class
