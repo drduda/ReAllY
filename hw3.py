@@ -74,7 +74,7 @@ if __name__ == "__main__":
     ray.init(log_to_driver=False)
     manager = SampleManager(ActorCritic, 'LunarLanderContinuous-v2',
                             num_parallel=2, total_steps=100,
-                            action_sampling_type="continous_normal_diagonal",
+                            action_sampling_type="continuous_normal_diagonal",
                             #todo check if monte carlo is correct
                             #todo what about gamma??
                             returns=['monte_carlo', 'value_estimate', 'log_prob'])

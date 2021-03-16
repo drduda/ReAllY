@@ -216,7 +216,6 @@ class Agent:
                 entropy = -tf.reduce_sum(logits * tf.math.log(logits), axis=-1)
                 entropy = tf.expand_dims(entropy, -1)
                 return log_prob, entropy
-            return log_prop
 
 
         elif self.action_sampling_type == "discrete_policy":
