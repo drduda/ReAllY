@@ -89,6 +89,11 @@ if __name__ == "__main__":
     # Factor of how much the new policy is allowed to differ from the old one
     epsilon = 0.2
 
+    # initilize progress aggregator
+    manager.initialize_aggregator(
+        path=saving_path, saving_after=5, aggregator_keys=["loss", "time_steps"]
+    )
+
     agent = manager.get_agent()
 
     optimizer = tf.keras.optimizers.Adam()
@@ -111,6 +116,7 @@ if __name__ == "__main__":
         sample_dict['log_prob'] = agent.flowing_log_prob(tf.convert_to_tensor(sample_dict["state"]), sample_dict['action'])
 
         data_dict = dict_to_dict_of_datasets(sample_dict, batch_size=optim_batch_size)
+        total_loss = 0
 
         for state, action, reward, state_new, not_done, mc, advantage_estimate, value_estimate, old_action_prob in \
             zip(data_dict['state'],
@@ -124,6 +130,8 @@ if __name__ == "__main__":
                 data_dict['log_prob']):
 
             old_action_prob = tf.cast(old_action_prob, tf.float32)
+            mc = tf.cast(mc, tf.float32)
+
             with tf.GradientTape() as tape:
                 # Actor loss
                 new_action_prob, entropy = agent.flowing_log_prob(state, action, return_entropy=True)
@@ -131,15 +139,33 @@ if __name__ == "__main__":
                 # Clipped Surrogate Objective is negative because of gradient ascent!
                 actor_loss = tf.minimum(actor_loss, tf.clip_by_value(actor_loss, 1-epsilon, 1+epsilon))
 
-                critic_loss = tf.losses.mean_squared_error(mc, agent.v(state))
+                critic_loss = tf.reduce_mean((mc - agent.v(state))**2)
 
                 loss = tf.reduce_mean(actor_loss + entropy)
                 # Signes are inverted because we technically use gradient ascent
                 loss = critic_loss - loss
 
+            total_loss += loss
             gradients = tape.gradient(loss, agent.model.trainable_variables)
             optimizer.apply_gradients(zip(gradients, agent.model.trainable_variables))
 
             # Update the agent
             manager.set_agent(agent.get_weights())
             agent = manager.get_agent()
+
+            time_steps = manager.test(test_steps)
+            manager.update_aggregator(loss=total_loss, time_steps=time_steps)
+            # print progress
+            print(
+                f"epoch ::: {e}  loss ::: {total_loss}   avg env steps ::: {np.mean(time_steps)}"
+            )
+
+            if e % saving_after == 0:
+                # you can save models
+                manager.save_model(saving_path, e)
+
+# and load mmodels
+manager.load_model(saving_path)
+print("done")
+print("testing optimized agent")
+manager.test(test_steps, test_episodes=10, render=True)
