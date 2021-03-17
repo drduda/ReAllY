@@ -92,7 +92,7 @@ if __name__ == "__main__":
 
     # initilize progress aggregator
     manager.initialize_aggregator(
-        path=saving_path, saving_after=5, aggregator_keys=["loss", "time_steps"]
+        path=saving_path, saving_after=5, aggregator_keys=["loss", "reward"]
     )
 
     agent = manager.get_agent()
@@ -134,6 +134,7 @@ if __name__ == "__main__":
                 # Actor loss
                 new_action_prob, entropy = agent.flowing_log_prob(state, action, return_entropy=True)
                 new_action_prob = tf.reduce_sum(new_action_prob, axis=-1)
+                entropy = tf.reduce_sum(entropy, axis=-1)
                 actor_loss = (new_action_prob/old_action_prob) * advantage_estimate
                 # Clipped Surrogate Objective is negative because of gradient ascent!
                 actor_loss = tf.minimum(actor_loss, tf.clip_by_value(actor_loss, 1-epsilon, 1+epsilon))
@@ -152,16 +153,16 @@ if __name__ == "__main__":
             manager.set_agent(agent.get_weights())
             agent = manager.get_agent()
 
-            time_steps = manager.test(test_steps)
-            manager.update_aggregator(loss=total_loss, time_steps=time_steps)
-            # print progress
-            print(
-                f"epoch ::: {e}  loss ::: {total_loss}   avg env steps ::: {np.mean(time_steps)}"
-            )
+        reward = manager.test(test_steps, evaluation_measure=reward)
+        manager.update_aggregator(loss=total_loss, time_steps=reward)
+        # print progress
+        print(
+            f"epoch ::: {e}  loss ::: {total_loss}   avg env steps ::: {np.mean(reward)}"
+        )
 
-            if e % saving_after == 0:
-                # you can save models
-                manager.save_model(saving_path, e)
+        if e % saving_after == 0:
+            # you can save models
+            manager.save_model(saving_path, e)
 
 # and load mmodels
 manager.load_model(saving_path)
