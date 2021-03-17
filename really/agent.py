@@ -122,8 +122,8 @@ class Agent:
             mus, sigmas = network_out["mu"].numpy(), network_out["sigma"].numpy()
             action = norm.rvs(mus, sigmas)
             output["action"] = action
-            logging.warning('action')
-            logging.warning(action)
+            #logging.warning('action')
+            #logging.warning(action)
 
             if return_log_prob:
                 output["log_probability"] = np.sum(norm.logpdf(action, mus, sigmas))
