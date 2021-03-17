@@ -107,6 +107,9 @@ if __name__ == "__main__":
         advantage_estimate = - state_value + sample_dict['reward'] + gamma * state_value_new
         sample_dict['advantage_estimate'] = advantage_estimate
 
+        #todo is this correct?
+        sample_dict['log_prob'] = agent.flowing_log_prob(tf.convert_to_tensor(sample_dict["state"]), sample_dict['action'])
+
         data_dict = dict_to_dict_of_datasets(sample_dict, batch_size=optim_batch_size)
 
         for state, action, reward, state_new, not_done, mc, advantage_estimate, value_estimate, old_action_prob in \
@@ -124,7 +127,7 @@ if __name__ == "__main__":
             with tf.GradientTape() as tape:
                 # Actor loss
                 new_action_prob, entropy = agent.flowing_log_prob(state, action, return_entropy=True)
-                actor_loss = (new_action_prob/old_action_prob)*advantage_estimate
+                actor_loss = (new_action_prob/old_action_prob) * tf.expand_dims(advantage_estimate,-1)
                 # Clipped Surrogate Objective is negative because of gradient ascent!
                 actor_loss = tf.minimum(actor_loss, tf.clip_by_value(actor_loss, 1-epsilon, 1+epsilon))
 
