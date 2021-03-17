@@ -98,12 +98,13 @@ if __name__ == "__main__":
         print(f"collected data for: {sample_dict.keys()}")
 
         # Shift value estimate by one to the left to get the value estimate of next state
-        state_value_new = tf.roll(sample_dict['value_estimate'], -1, axis=0)
+        state_value = tf.squeeze(sample_dict['value_estimate'])
+        state_value_new = tf.roll(state_value, -1, axis=0)
         not_done = tf.cast(sample_dict['not_done'], tf.bool)
         state_value_new = tf.where(not_done, state_value_new, 0)
 
         # Calculate advantate estimate q(s,a)-b(s)=r+v(s')-v(s)
-        advantage_estimate = sample_dict['reward'] + state_value_new - sample_dict['value_estimate']
+        advantage_estimate = sample_dict['reward'] + state_value_new - state_value
         sample_dict['advantage_estimate'] = advantage_estimate
 
         data_dict = dict_to_dict_of_datasets(sample_dict, batch_size=optim_batch_size)
