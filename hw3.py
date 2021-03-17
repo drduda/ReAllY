@@ -104,7 +104,7 @@ if __name__ == "__main__":
         state_value_new = tf.where(not_done, state_value_new, 0)
 
         # Calculate advantate estimate q(s,a)-b(s)=r+v(s')-v(s)
-        advantage_estimate = sample_dict['reward'] + state_value_new - state_value
+        advantage_estimate = - state_value + sample_dict['reward'] + gamma * state_value_new
         sample_dict['advantage_estimate'] = advantage_estimate
 
         data_dict = dict_to_dict_of_datasets(sample_dict, batch_size=optim_batch_size)
@@ -126,10 +126,13 @@ if __name__ == "__main__":
                 new_action_prob, entropy = agent.flowing_log_prob(state, action, return_entropy=True)
                 actor_loss = (new_action_prob/old_action_prob)*advantage_estimate
                 # Clipped Surrogate Objective is negative because of gradient ascent!
-                actor_loss = - tf.minimum(actor_loss, tf.clip_by_value(actor_loss, 1-epsilon, 1+epsilon))
+                actor_loss = tf.minimum(actor_loss, tf.clip_by_value(actor_loss, 1-epsilon, 1+epsilon))
 
-                #todo Train with mean squard error between value and rewards to go
-                loss = actor_loss
+                critic_loss = tf.losses.mean_squared_error(mc, agent.v(state))
+
+                loss = tf.reduce_mean(actor_loss + entropy)
+                # Signes are inverted because we technically use gradient ascent
+                loss = critic_loss - loss
 
             gradients = tape.gradient(loss, agent.model.trainable_variables)
             optimizer.apply_gradients(zip(gradients, agent.model.trainable_variables))
