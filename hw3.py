@@ -88,6 +88,7 @@ if __name__ == "__main__":
     test_steps = 1000
     # Factor of how much the new policy is allowed to differ from the old one
     epsilon = 0.2
+    entropy_weight = 0.01
 
     # initilize progress aggregator
     manager.initialize_aggregator(
@@ -112,9 +113,6 @@ if __name__ == "__main__":
         advantage_estimate = - state_value + sample_dict['reward'] + gamma * state_value_new
         sample_dict['advantage_estimate'] = advantage_estimate
 
-        #todo is this correct?
-        sample_dict['log_prob'] = agent.flowing_log_prob(tf.convert_to_tensor(sample_dict["state"]), sample_dict['action'])
-
         data_dict = dict_to_dict_of_datasets(sample_dict, batch_size=optim_batch_size)
         total_loss = 0
 
@@ -135,14 +133,15 @@ if __name__ == "__main__":
             with tf.GradientTape() as tape:
                 # Actor loss
                 new_action_prob, entropy = agent.flowing_log_prob(state, action, return_entropy=True)
-                actor_loss = (new_action_prob/old_action_prob) * tf.expand_dims(advantage_estimate,-1)
+                new_action_prob = tf.reduce_sum(new_action_prob, axis=-1)
+                actor_loss = (new_action_prob/old_action_prob) * advantage_estimate
                 # Clipped Surrogate Objective is negative because of gradient ascent!
                 actor_loss = tf.minimum(actor_loss, tf.clip_by_value(actor_loss, 1-epsilon, 1+epsilon))
 
                 critic_loss = tf.reduce_mean((mc - agent.v(state))**2)
 
-                loss = tf.reduce_mean(actor_loss + entropy)
-                # Signes are inverted because we technically use gradient ascent
+                loss = tf.reduce_mean(actor_loss + entropy_weight*entropy)
+                # Signes are inverted because we technically use gradient descent
                 loss = critic_loss - loss
 
             total_loss += loss
