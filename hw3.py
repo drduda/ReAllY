@@ -73,16 +73,16 @@ if __name__ == "__main__":
     # initialize
     ray.init(log_to_driver=False)
     manager = SampleManager(ActorCritic, 'LunarLanderContinuous-v2',
-                            num_parallel=2, total_steps=100,
+                            num_parallel=3, total_steps=150,
                             action_sampling_type="continuous_normal_diagonal",
                             #todo check if monte carlo is correct
                             #todo what about gamma??
                             returns=['monte_carlo', 'value_estimate', 'log_prob'])
 
-    epochs = 100
+    epochs = 200
     saving_path = os.getcwd() + "/hw3_results"
     saving_after = 5
-    sample_size = 100
+    sample_size = 150
     optim_batch_size = 8
     gamma = .99
     test_steps = 1000
@@ -153,8 +153,8 @@ if __name__ == "__main__":
             manager.set_agent(agent.get_weights())
             agent = manager.get_agent()
 
-        reward = manager.test(test_steps, evaluation_measure=reward)
-        manager.update_aggregator(loss=total_loss, time_steps=reward)
+        reward = manager.test(test_steps, evaluation_measure="reward")
+        manager.update_aggregator(loss=total_loss, reward=reward)
         # print progress
         print(
             f"epoch ::: {e}  loss ::: {total_loss}   avg env steps ::: {np.mean(reward)}"
