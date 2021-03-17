@@ -119,10 +119,10 @@ if __name__ == "__main__":
                 data_dict['value_estimate'],
                 data_dict['log_prob']):
 
-
+            old_action_prob = tf.cast(old_action_prob, tf.float32)
             with tf.GradientTape() as tape:
                 # Actor loss
-                new_action_prob, entropy = agent.flowing_log_prob(state, action)#todo entropy
+                new_action_prob, entropy = agent.flowing_log_prob(state, action, return_entropy=True)
                 actor_loss = (new_action_prob/old_action_prob)*advantage_estimate
                 # Clipped Surrogate Objective is negative because of gradient ascent!
                 actor_loss = - tf.minimum(actor_loss, tf.clip_by_value(actor_loss, 1-epsilon, 1+epsilon))
