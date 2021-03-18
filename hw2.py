@@ -41,7 +41,7 @@ if __name__ == "__main__":
 
     buffer_size = 2000
     epochs = 100
-    saving_path = os.getcwd() + "/progress_test"
+    saving_path = os.getcwd() + "/progress_dqn"
     saving_after = 5
     sample_size = 100
     optim_batch_size = 8
