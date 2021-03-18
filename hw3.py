@@ -164,8 +164,8 @@ if __name__ == "__main__":
             # you can save models
             manager.save_model(saving_path, e)
 
-# and load mmodels
-manager.load_model(saving_path)
-print("done")
-print("testing optimized agent")
-manager.test(test_steps, test_episodes=10, render=True)
+    # and load mmodels
+    manager.load_model(saving_path)
+    print("done")
+    print("testing optimized agent")
+    manager.test(test_steps, test_episodes=10, render=True)
