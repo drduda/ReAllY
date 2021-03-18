@@ -79,7 +79,7 @@ if __name__ == "__main__":
                             #todo what about gamma??
                             returns=['monte_carlo', 'value_estimate', 'log_prob'])
 
-    epochs = 200
+    epochs = 2
     saving_path = os.getcwd() + "/hw3_results"
     saving_after = 5
     sample_size = 150
