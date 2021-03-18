@@ -62,8 +62,8 @@ class ActorCritic(tf.keras.Model):
 
         # Critic
         hidden = self.v1(state)
-        hidden = self.v2(state)
-        vout = self.vout(state)
+        hidden = self.v2(hidden)
+        vout = self.vout(hidden)
         output['value_estimate'] = vout
 
         return output
