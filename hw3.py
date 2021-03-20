@@ -125,7 +125,7 @@ if __name__ == "__main__":
                             #todo what about gamma??
                             returns=['monte_carlo', 'value_estimate', 'log_prob'])
 
-    epochs = 200
+    epochs = 30
     saving_path = os.getcwd() + "/hw3_results"
     saving_after = 5
     sample_size = 150
@@ -189,8 +189,9 @@ if __name__ == "__main__":
                     tf.clip_by_value(action_prob_ratio, 1-epsilon, 1+epsilon) * advantage_estimate
                 )
 
-                # negative actor loss to simulate gradient ascent
-                actor_loss = - tf.reduce_mean(actor_l_clip + entropy_weight * entropy)
+                # intuitively the loss should be made negative
+                # in fact the loss works best just like that without a negative sign
+                actor_loss = tf.reduce_mean(actor_l_clip + entropy_weight * entropy)
 
             actor_gradients = tape.gradient(actor_loss, agent.model.actor.trainable_variables)
             optimizer.apply_gradients(zip(actor_gradients, agent.model.actor.trainable_variables))
