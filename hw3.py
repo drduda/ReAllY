@@ -2,7 +2,7 @@ import numpy as np
 import ray
 from really import SampleManager
 import tensorflow as tf
-from tensorflow.keras.layers import Dense, LeakyReLU
+from tensorflow.keras.layers import Dense, LeakyReLU, Layer
 import os
 from really.utils import dict_to_dict_of_datasets
 
@@ -31,45 +31,8 @@ directly (as the gradient flow is interrupted)
 if you are on policy ant need log probabilities to train, be aware you cannot make use of the collected log prob values of the sample manager, as a) you might need gradient flow and b) if you change your policy the future probabilities will also change
 """
 
-class ActorCritic(tf.keras.Model):
-    def __init__(self, action_dimension=2, min_action=-1, max_action=1):
-        super().__init__()
-        self.action_dimension = action_dimension
-        self.min_action = min_action
-        self.max_action = max_action
 
-        # Actor net
-        self.d1 = Dense(16, activation=LeakyReLU())
-        self.d2 = Dense(32, activation=LeakyReLU())
-        self.dout = Dense(self.action_dimension*2, activation=None)
-
-        # Critic net
-        self.v1 = Dense(16, activation=LeakyReLU())
-        self.v2 = Dense(16, activation=LeakyReLU())
-        self.vout = Dense(1, activation=None)
-
-    def call(self, state):
-        output = {}
-
-        # Actor
-        hidden = self.d1(state)
-        hidden = self.d2(hidden)
-        dout = self.dout(hidden)
-        # Clip mu to the possible actions spaces
-        output["mu"] = tf.clip_by_value(dout[:, self.action_dimension:], self.min_action, self.max_action)
-        #todo check if really **e is needed
-        output["sigma"] = tf.exp(dout[:, :self.action_dimension])
-
-        # Critic
-        hidden = self.v1(state)
-        hidden = self.v2(hidden)
-        vout = self.vout(hidden)
-        output['value_estimate'] = vout
-
-        return output
-
-
-class Actor(tf.keras.Model):
+class Actor(tf.keras.layers.Layer):
 
     def __init__(self, action_dimension=2, min_action=-1, max_action=1):
         super(Actor, self).__init__()
@@ -77,64 +40,83 @@ class Actor(tf.keras.Model):
         self.min_action = min_action
         self.max_action = max_action
 
-        self.d1 = Dense(16, activation=LeakyReLU())
-        self.d2 = Dense(32, activation=LeakyReLU())
-        self.dout = Dense(self.action_dimension*2, activation=None)
+        self.d1 = Dense(16, activation=LeakyReLU(), dtype=tf.float64)
+        self.d2 = Dense(32, activation=LeakyReLU(), dtype=tf.float64)
+        self.dout = Dense(self.action_dimension*2, activation=None, dtype=tf.float64)
 
     def call(self, inputs, training=None, mask=None):
         output = {}
 
         # pass through network
-        hidden = self.d1(state)
+        hidden = self.d1(inputs)
         hidden = self.d2(hidden)
         dout = self.dout(hidden)
 
         # Clip mu to the possible actions spaces
-        mu = tf.clip_by_value(dout[:, self.action_dimension:], self.min_action, self.max_action)
-        # prevent nan error:
-        nan_idxs = np.argwhere(np.isnan(mu))
-        for idx in nan_idxs:
-            mu[idx] = np.random.rand() * (self.max_action - self.min_action) + self.min_action
-        output['mu'] = mu
+        output['mu'] = tf.clip_by_value(dout[:, self.action_dimension:], self.min_action, self.max_action)
+        output['sigma'] = tf.exp(dout[:, :self.action_dimension])
 
-        sigma = tf.exp(dout[:, :self.action_dimension])
-        nan_idxs = np.argwhere(np.isnan(sigma))
-        for idx in nan_idxs:
-            sigma[idx] = np.random.rand() * (self.max_action - self.min_action) + self.min_action
-        output['sigma'] = sigma
+        return output
 
     def get_config(self):
         return super().get_config()
 
 
-class Critic(tf.keras.Model):
+class Critic(tf.keras.layers.Layer):
 
     def __init__(self):
         super(Critic, self).__init__()
 
-        self.d1 = Dense(16, activation=LeakyReLU())
-        self.d2 = Dense(32, activation=LeakyReLU())
-        self.dout = Dense(1, activation=None)
+        self.d1 = Dense(16, activation=LeakyReLU(), dtype=tf.float64)
+        self.d2 = Dense(32, activation=LeakyReLU(), dtype=tf.float64)
+        self.dout = Dense(1, activation=None, dtype=tf.float64)
 
     def call(self, inputs, training=None, mask=None):
         output = {}
 
         # pass through network
-        hidden = self.d1(state)
+        hidden = self.d1(inputs)
         hidden = self.d2(hidden)
         dout = self.dout(hidden)
 
         output['value_estimate'] = dout
 
+        return output
+
     def get_config(self):
         return super().get_config()
+
+
+class PPONet(tf.keras.Model):
+    def __init__(self, action_dimension=2, min_action=-1, max_action=1):
+        super(PPONet, self).__init__()
+        self.action_dimension = action_dimension
+        self.min_action = min_action
+        self.max_action = max_action
+        self.actor = Actor(self.action_dimension, self.min_action, self.max_action)
+
+        self.critic = Critic()
+
+    def call(self, state, **kwargs):
+        output = {}
+
+        actor_out = self.actor(state)
+        output['mu'] = actor_out['mu']
+        output['sigma'] = actor_out['sigma']
+
+        output['value_estimate'] = self.critic(state)['value_estimate']
+
+        return output
+
+    def get_config(self):
+        return super(PPONet, self).get_config()
 
 
 if __name__ == "__main__":
 
     # initialize
     ray.init(log_to_driver=False)
-    manager = SampleManager(ActorCritic, 'LunarLanderContinuous-v2',
+    manager = SampleManager(PPONet, 'LunarLanderContinuous-v2',
                             num_parallel=3, total_steps=150,
                             action_sampling_type="continuous_normal_diagonal",
                             #todo check if monte carlo is correct
@@ -192,24 +174,34 @@ if __name__ == "__main__":
             old_action_prob = tf.cast(old_action_prob, tf.float32)
             mc = tf.cast(mc, tf.float32)
 
+            # train actor
             with tf.GradientTape() as tape:
                 # Actor loss
                 new_action_prob, entropy = agent.flowing_log_prob(state, action, return_entropy=True)
                 new_action_prob = tf.reduce_sum(new_action_prob, axis=-1)
                 entropy = tf.reduce_sum(entropy, axis=-1)
-                actor_loss = (new_action_prob/old_action_prob) * advantage_estimate
                 # Clipped Surrogate Objective is negative because of gradient ascent!
-                actor_loss = tf.minimum(actor_loss, tf.clip_by_value(actor_loss, 1-epsilon, 1+epsilon))
+                action_prob_ratio = (new_action_prob/old_action_prob)
+                actor_l_clip = tf.minimum(
+                    action_prob_ratio * advantage_estimate,
+                    tf.clip_by_value(action_prob_ratio, 1-epsilon, 1+epsilon) * advantage_estimate
+                )
 
-                critic_loss = tf.reduce_mean((mc - agent.v(state))**2)
+                # negative actor loss to simulate gradient ascent
+                actor_loss = - tf.reduce_mean(actor_l_clip + entropy_weight*entropy)
 
-                loss = tf.reduce_mean(actor_loss + entropy_weight*entropy)
-                # Signes are inverted because we technically use gradient descent
-                loss = critic_loss - loss
+            actor_gradients = tape.gradient(actor_loss, agent.model.actor.trainable_variables)
+            optimizer.apply_gradients(zip(actor_gradients, agent.model.actor.trainable_variables))
 
-            total_loss += loss
-            gradients = tape.gradient(loss, agent.model.trainable_variables)
-            optimizer.apply_gradients(zip(gradients, agent.model.trainable_variables))
+            # train critic
+            with tf.GradientTape() as tape:
+                # positive critic loss for gradient descent with MSE
+                critic_loss = tf.reduce_mean((mc - agent.v(state)) ** 2)
+
+            critic_gradients = tape.gradient(critic_loss, agent.model.critic.trainable_variables)
+            optimizer.apply_gradients(zip(critic_gradients, agent.model.critic.trainable_variables))
+
+            total_loss += actor_loss + critic_loss
 
             # Update the agent
             manager.set_agent(agent.get_weights())
