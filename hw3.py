@@ -1,9 +1,11 @@
 import numpy as np
 import ray
 from really import SampleManager
+import os, logging
+logging.disable(logging.WARNING)
 import tensorflow as tf
+tf.get_logger().setLevel('INFO')
 from tensorflow.keras.layers import Dense, LeakyReLU, Layer
-import os
 from really.utils import dict_to_dict_of_datasets
 
 """
@@ -40,9 +42,9 @@ class Actor(tf.keras.layers.Layer):
         self.min_action = min_action
         self.max_action = max_action
 
-        self.d1 = Dense(16, activation=LeakyReLU(), dtype=tf.float64)
-        self.d2 = Dense(32, activation=LeakyReLU(), dtype=tf.float64)
-        self.dout = Dense(self.action_dimension*2, activation=None, dtype=tf.float64)
+        self.d1 = Dense(16, activation=LeakyReLU(), dtype=tf.float32)
+        self.d2 = Dense(32, activation=LeakyReLU(), dtype=tf.float32)
+        self.dout = Dense(self.action_dimension*2, activation=None, dtype=tf.float32)
 
     def call(self, inputs, training=None, mask=None):
         output = {}
@@ -67,9 +69,9 @@ class Critic(tf.keras.layers.Layer):
     def __init__(self):
         super(Critic, self).__init__()
 
-        self.d1 = Dense(16, activation=LeakyReLU(), dtype=tf.float64)
-        self.d2 = Dense(32, activation=LeakyReLU(), dtype=tf.float64)
-        self.dout = Dense(1, activation=None, dtype=tf.float64)
+        self.d1 = Dense(16, activation=LeakyReLU(), dtype=tf.float32)
+        self.d2 = Dense(32, activation=LeakyReLU(), dtype=tf.float32)
+        self.dout = Dense(1, activation=None, dtype=tf.float32)
 
     def call(self, inputs, training=None, mask=None):
         output = {}
@@ -141,7 +143,7 @@ if __name__ == "__main__":
 
     agent = manager.get_agent()
 
-    optimizer = tf.keras.optimizers.Adam()
+    optimizer = tf.keras.optimizers.Adam(learning_rate=.0001)
 
     for e in range(epochs):
         sample_dict = manager.sample(sample_size, from_buffer=False)
@@ -188,7 +190,7 @@ if __name__ == "__main__":
                 )
 
                 # negative actor loss to simulate gradient ascent
-                actor_loss = - tf.reduce_mean(actor_l_clip + entropy_weight*entropy)
+                actor_loss = - tf.reduce_mean(actor_l_clip + entropy_weight * entropy)
 
             actor_gradients = tape.gradient(actor_loss, agent.model.actor.trainable_variables)
             optimizer.apply_gradients(zip(actor_gradients, agent.model.actor.trainable_variables))
