@@ -9,7 +9,6 @@ test.py
 a2c.py
 ppo.py
 
-progress_*
 grid_q.py
 *.log
 
