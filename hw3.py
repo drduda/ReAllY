@@ -68,6 +68,68 @@ class ActorCritic(tf.keras.Model):
 
         return output
 
+
+class Actor(tf.keras.Model):
+
+    def __init__(self, action_dimension=2, min_action=-1, max_action=1):
+        super(Actor, self).__init__()
+        self.action_dimension = action_dimension
+        self.min_action = min_action
+        self.max_action = max_action
+
+        self.d1 = Dense(16, activation=LeakyReLU())
+        self.d2 = Dense(32, activation=LeakyReLU())
+        self.dout = Dense(self.action_dimension*2, activation=None)
+
+    def call(self, inputs, training=None, mask=None):
+        output = {}
+
+        # pass through network
+        hidden = self.d1(state)
+        hidden = self.d2(hidden)
+        dout = self.dout(hidden)
+
+        # Clip mu to the possible actions spaces
+        mu = tf.clip_by_value(dout[:, self.action_dimension:], self.min_action, self.max_action)
+        # prevent nan error:
+        nan_idxs = np.argwhere(np.isnan(mu))
+        for idx in nan_idxs:
+            mu[idx] = np.random.rand() * (self.max_action - self.min_action) + self.min_action
+        output['mu'] = mu
+
+        sigma = tf.exp(dout[:, :self.action_dimension])
+        nan_idxs = np.argwhere(np.isnan(sigma))
+        for idx in nan_idxs:
+            sigma[idx] = np.random.rand() * (self.max_action - self.min_action) + self.min_action
+        output['sigma'] = sigma
+
+    def get_config(self):
+        return super().get_config()
+
+
+class Critic(tf.keras.Model):
+
+    def __init__(self):
+        super(Critic, self).__init__()
+
+        self.d1 = Dense(16, activation=LeakyReLU())
+        self.d2 = Dense(32, activation=LeakyReLU())
+        self.dout = Dense(1, activation=None)
+
+    def call(self, inputs, training=None, mask=None):
+        output = {}
+
+        # pass through network
+        hidden = self.d1(state)
+        hidden = self.d2(hidden)
+        dout = self.dout(hidden)
+
+        output['value_estimate'] = dout
+
+    def get_config(self):
+        return super().get_config()
+
+
 if __name__ == "__main__":
 
     # initialize
