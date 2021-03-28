@@ -22,9 +22,9 @@ class TD3Actor(tf.keras.layers.Layer):
         self.min_action = min_action
         self.max_action = max_action
 
-        self.d1 = Dense(16, activation=LeakyReLU(), dtype=tf.float64)
-        self.d2 = Dense(32, activation=LeakyReLU(), dtype=tf.float64)
-        self.dout = Dense(self.action_dimension*2, activation=None, dtype=tf.float64)
+        self.d1 = Dense(16, activation=LeakyReLU(), dtype=tf.float32)
+        self.d2 = Dense(32, activation=LeakyReLU(), dtype=tf.float32)
+        self.dout = Dense(self.action_dimension*2, activation=None, dtype=tf.float32)
 
     def call(self, inputs, training=None, mask=None):
         output = {}
@@ -49,9 +49,9 @@ class TD3Critic(tf.keras.layers.Layer):
     def __init__(self):
         super(TD3Critic, self).__init__()
 
-        self.d1 = Dense(16, activation=LeakyReLU(), dtype=tf.float64)
-        self.d2 = Dense(32, activation=LeakyReLU(), dtype=tf.float64)
-        self.dout = Dense(1, activation=None, dtype=tf.float64)
+        self.d1 = Dense(16, activation=LeakyReLU(), dtype=tf.float32)
+        self.d2 = Dense(32, activation=LeakyReLU(), dtype=tf.float32)
+        self.dout = Dense(1, activation=None, dtype=tf.float32)
 
     def call(self, inputs, training=None, mask=None):
         output = {}
@@ -61,7 +61,7 @@ class TD3Critic(tf.keras.layers.Layer):
         hidden = self.d2(hidden)
         dout = self.dout(hidden)
 
-        output['q_values'] = dout
+        output['q_values'] = tf.squeeze(dout)
 
         return output
 
@@ -88,7 +88,8 @@ class TD3Net(tf.keras.Model):
         output['sigma'] = actor_out['sigma']
 
         # reparameterization trick
-        action = output['mu'] + output['sigma'] * tf.random.normal(output['mu'].shape, 0., 1., dtype=tf.float64)
+        action = output['mu'] + output['sigma'] * tf.random.normal(output['mu'].shape, 0., 1., dtype=tf.float32)
+        action = tf.clip_by_value(action, self.min_action, self.max_action)
         # input for q network
         state_action = tf.concat([state, action], axis=-1, name='float error concat')
 
@@ -105,7 +106,7 @@ class TD3Net(tf.keras.Model):
 
 if __name__ == "__main__":
 
-    tf.keras.backend.set_floatx('float64')
+    tf.keras.backend.set_floatx('float32')
 
     ray.init(log_to_driver=False)
 
@@ -119,7 +120,7 @@ if __name__ == "__main__":
     test_steps = 10
     update_interval = 4
     policy_delay = 2
-    rho = .9
+    rho = .2
 
     manager = SampleManager(
         TD3Net,
@@ -160,14 +161,13 @@ if __name__ == "__main__":
 
     target_agent = manager.get_agent()
     for e in range(epochs):
-        if e % update_interval == 0:
-            # Polyak averaging
-            new_weights = rho * target_agent.get_weights + (1 - rho) * manager.get_agent().get_weights()
-            target_agent.set_weights(new_weights)
         # off policy
         sample_dict = manager.sample(sample_size, from_buffer=True)
         print(f"collected data for: {sample_dict.keys()}")
 
+        sample_dict['reward'] = tf.cast(sample_dict['reward'], tf.float32)
+        sample_dict['action'] = tf.cast(sample_dict['action'], tf.float32)
+        sample_dict['not_done'] = tf.cast(sample_dict['not_done'], tf.float32)
         data_dict = dict_to_dict_of_datasets(sample_dict, batch_size=optim_batch_size)
 
         total_loss = 0
@@ -178,7 +178,7 @@ if __name__ == "__main__":
                 data_dict['state_new'],
                 data_dict['not_done']):
 
-            action_new = target_agent.flowing_log_prob(state, action)
+            action_new = target_agent.act(state_new)
             # add noise to action_new
             action_new = action_new + tf.random.normal(action_new.shape, 0., 1.)
             # clip action_new to action space
@@ -188,13 +188,12 @@ if __name__ == "__main__":
                 manager.env_instance.action_space.high
             )
 
-            # TODO: do we need tf.gather?
             state_action_new = tf.concat([state_new, action_new], axis=-1)
             q_values0 = target_agent.model.critic0(state_action_new)['q_values']
             q_values1 = target_agent.model.critic1(state_action_new)['q_values']
             q_values = tf.concat([q_values0, q_values1], axis=-1)
-            q_targets = tf.reduce_min(q_values, axis=-1)
-            critic_target = reward + gamma * tf.cast(not_done, tf.float64) * q_targets
+            q_targets = tf.squeeze(tf.reduce_min(q_values, axis=-1))
+            critic_target = reward + gamma * not_done * q_targets
 
             state_action = tf.concat([state, action], axis=-1)
 
@@ -219,10 +218,11 @@ if __name__ == "__main__":
             # update actor
             if e % policy_delay == 0:
                 with tf.GradientTape() as tape:
-                    # TODO: why sum?
-                    action_prob = tf.reduce_sum(agent.flowing_log_prob(state, action), axis=-1)
-                    state_action = tf.concat([state, action_prob], axis=-1)
-                    q_val = agent.model.critic0(state_action)
+                    actor_output = agent.model.actor(state)
+                    action = actor_output['mu'] + actor_output['sigma'] * tf.random.normal(actor_output['mu'].shape, 0., 1., dtype=tf.float32)
+                    action = tf.clip_by_value(action, agent.model.min_action, agent.model.max_action)
+                    state_action = tf.concat([state, action], axis=-1)
+                    q_val = agent.model.critic0(state_action)['q_values']
                     actor_loss = - tf.reduce_mean(q_val)
 
                 total_loss += actor_loss
@@ -232,6 +232,12 @@ if __name__ == "__main__":
             # Update agent
             manager.set_agent(agent.get_weights())
             agent = manager.get_agent()
+
+            if e % policy_delay == 0:
+                # Polyak averaging
+                new_weights = [rho * target_agent.get_weights()[i] + (1 - rho) * manager.get_agent().get_weights()[i]
+                               for i in range(len(agent.get_weights()))]
+                target_agent.set_weights(new_weights)
 
         reward = manager.test(test_steps, evaluation_measure="reward")
         manager.update_aggregator(loss=total_loss, reward=reward)
