@@ -1,0 +1,1 @@
+from bipedalwalker.envs.bipedalwalker import MyBipedalWalker
