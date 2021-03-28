@@ -119,6 +119,7 @@ if __name__ == "__main__":
     test_steps = 10
     update_interval = 4
     policy_delay = 2
+    rho = .9
 
     manager = SampleManager(
         TD3Net,
@@ -157,10 +158,12 @@ if __name__ == "__main__":
         data = manager.get_data()
         manager.store_in_buffer(data)
 
+    target_agent = manager.get_agent()
     for e in range(epochs):
         if e % update_interval == 0:
-            # TODO: Polyak averaging
-            target_agent = manager.get_agent()
+            # Polyak averaging
+            new_weights = rho * target_agent.get_weights + (1 - rho) * manager.get_agent().get_weights()
+            target_agent.set_weights(new_weights)
         # off policy
         sample_dict = manager.sample(sample_size, from_buffer=True)
         print(f"collected data for: {sample_dict.keys()}")
