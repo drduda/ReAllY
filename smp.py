@@ -61,9 +61,7 @@ class TD3Critic(tf.keras.layers.Layer):
         hidden = self.d2(hidden)
         dout = self.dout(hidden)
 
-        output['q_values'] = tf.squeeze(dout)
-
-        return output
+        return dout
 
     def get_config(self):
         return super().get_config()
@@ -88,15 +86,20 @@ class TD3Net(tf.keras.Model):
         output['sigma'] = actor_out['sigma']
 
         # reparameterization trick
-        action = output['mu'] + output['sigma'] * tf.random.normal(output['mu'].shape, 0., 1., dtype=tf.float32)
+        action = output['mu'] + output['sigma'] * tf.random.normal([self.action_dimension], 0., 1., dtype=tf.float32)
         action = tf.clip_by_value(action, self.min_action, self.max_action)
         # input for q network
-        state_action = tf.concat([state, action], axis=-1, name='float error concat')
+        state_action = tf.concat([state, action], axis=-1)
 
-        output['q_values'] = tf.concat([
-            self.critic0(state_action)['q_values'],
-            self.critic1(state_action)['q_values']
+        q_values = tf.concat([
+            self.critic0(state_action),
+            self.critic1(state_action)
         ], axis=-1)
+
+        if 'all_qs' in kwargs.keys() and kwargs['all_qs']:
+            output['q_values'] = q_values
+        else:
+            output['q_values'] = tf.squeeze(tf.reduce_min(q_values, axis=-1))
 
         return output
 
@@ -189,8 +192,8 @@ if __name__ == "__main__":
             )
 
             state_action_new = tf.concat([state_new, action_new], axis=-1)
-            q_values0 = target_agent.model.critic0(state_action_new)['q_values']
-            q_values1 = target_agent.model.critic1(state_action_new)['q_values']
+            q_values0 = target_agent.model.critic0(state_action_new)
+            q_values1 = target_agent.model.critic1(state_action_new)
             q_values = tf.concat([q_values0, q_values1], axis=-1)
             q_targets = tf.squeeze(tf.reduce_min(q_values, axis=-1))
             critic_target = reward + gamma * not_done * q_targets
@@ -199,8 +202,8 @@ if __name__ == "__main__":
 
             # update critic 0
             with tf.GradientTape() as tape:
-                q_output = agent.model.critic0(state_action)['q_values']
-                loss = tf.keras.losses.MSE(critic_target, q_output)
+                q_output = agent.model.critic0(state_action)
+                loss = tf.keras.losses.MSE(tf.squeeze(critic_target), tf.squeeze(q_output))
 
             total_loss += loss
             gradients = tape.gradient(loss, agent.model.critic0.trainable_variables)
@@ -208,8 +211,8 @@ if __name__ == "__main__":
 
             # update critic 1
             with tf.GradientTape() as tape:
-                q_output = agent.model.critic1(state_action)['q_values']
-                loss = tf.keras.losses.MSE(critic_target, q_output)
+                q_output = agent.model.critic1(state_action)
+                loss = tf.keras.losses.MSE(tf.squeeze(critic_target), tf.squeeze(q_output))
 
             total_loss += loss
             gradients = tape.gradient(loss, agent.model.critic1.trainable_variables)
@@ -222,7 +225,7 @@ if __name__ == "__main__":
                     action = actor_output['mu'] + actor_output['sigma'] * tf.random.normal(actor_output['mu'].shape, 0., 1., dtype=tf.float32)
                     action = tf.clip_by_value(action, agent.model.min_action, agent.model.max_action)
                     state_action = tf.concat([state, action], axis=-1)
-                    q_val = agent.model.critic0(state_action)['q_values']
+                    q_val = agent.model.critic0(state_action)
                     actor_loss = - tf.reduce_mean(q_val)
 
                 total_loss += actor_loss
