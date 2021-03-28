@@ -22,9 +22,9 @@ class TD3Actor(tf.keras.layers.Layer):
         self.min_action = min_action
         self.max_action = max_action
 
-        self.d1 = Dense(16, activation=LeakyReLU(), dtype=tf.float32)
-        self.d2 = Dense(32, activation=LeakyReLU(), dtype=tf.float32)
-        self.dout = Dense(self.action_dimension*2, activation=None, dtype=tf.float32)
+        self.d1 = Dense(16, activation=LeakyReLU(), dtype=tf.float64)
+        self.d2 = Dense(32, activation=LeakyReLU(), dtype=tf.float64)
+        self.dout = Dense(self.action_dimension*2, activation=None, dtype=tf.float64)
 
     def call(self, inputs, training=None, mask=None):
         output = {}
@@ -49,9 +49,9 @@ class TD3Critic(tf.keras.layers.Layer):
     def __init__(self):
         super(TD3Critic, self).__init__()
 
-        self.d1 = Dense(16, activation=LeakyReLU(), dtype=tf.float32)
-        self.d2 = Dense(32, activation=LeakyReLU(), dtype=tf.float32)
-        self.dout = Dense(1, activation=None, dtype=tf.float32)
+        self.d1 = Dense(16, activation=LeakyReLU(), dtype=tf.float64)
+        self.d2 = Dense(32, activation=LeakyReLU(), dtype=tf.float64)
+        self.dout = Dense(1, activation=None, dtype=tf.float64)
 
     def call(self, inputs, training=None, mask=None):
         output = {}
@@ -87,7 +87,15 @@ class TD3Net(tf.keras.Model):
         output['mu'] = actor_out['mu']
         output['sigma'] = actor_out['sigma']
 
-        output['q_values'] = (self.critic0(state)['q_values'], self.critic1(state)['q_values'])
+        # reparameterization trick
+        action = output['mu'] + output['sigma'] * tf.random.normal(output['mu'].shape, 0., 1., dtype=tf.float64)
+        # input for q network
+        state_action = tf.concat([state, action], axis=-1, name='float error concat')
+
+        output['q_values'] = tf.concat([
+            self.critic0(state_action)['q_values'],
+            self.critic1(state_action)['q_values']
+        ], axis=-1)
 
         return output
 
@@ -96,6 +104,8 @@ class TD3Net(tf.keras.Model):
 
 
 if __name__ == "__main__":
+
+    tf.keras.backend.set_floatx('float64')
 
     ray.init(log_to_driver=False)
 
@@ -108,7 +118,7 @@ if __name__ == "__main__":
     gamma = .99
     test_steps = 10
     update_interval = 4
-
+    policy_delay = 2
 
     manager = SampleManager(
         TD3Net,
@@ -149,6 +159,7 @@ if __name__ == "__main__":
 
     for e in range(epochs):
         if e % update_interval == 0:
+            # TODO: Polyak averaging
             target_agent = manager.get_agent()
         # off policy
         sample_dict = manager.sample(sample_size, from_buffer=True)
@@ -156,6 +167,7 @@ if __name__ == "__main__":
 
         data_dict = dict_to_dict_of_datasets(sample_dict, batch_size=optim_batch_size)
 
+        total_loss = 0
         for state, action, reward, state_new, not_done in \
             zip(data_dict['state'],
                 data_dict['action'],
@@ -165,7 +177,7 @@ if __name__ == "__main__":
 
             action_new = target_agent.flowing_log_prob(state, action)
             # add noise to action_new
-            action_new = tf.cast(action_new, tf.float32) + tf.random.normal(action_new.shape, 0., 1.)
+            action_new = action_new + tf.random.normal(action_new.shape, 0., 1.)
             # clip action_new to action space
             action_new = tf.clip_by_value(
                 action_new,
@@ -173,5 +185,61 @@ if __name__ == "__main__":
                 manager.env_instance.action_space.high
             )
 
-            q_targets = agent.q_val(state_new, action_new)
-            critic_target = reward + gamma * tf.cast(not_done, tf.float32) * np.min(q_targets)
+            # TODO: do we need tf.gather?
+            state_action_new = tf.concat([state_new, action_new], axis=-1)
+            q_values0 = target_agent.model.critic0(state_action_new)['q_values']
+            q_values1 = target_agent.model.critic1(state_action_new)['q_values']
+            q_values = tf.concat([q_values0, q_values1], axis=-1)
+            q_targets = tf.reduce_min(q_values, axis=-1)
+            critic_target = reward + gamma * tf.cast(not_done, tf.float64) * q_targets
+
+            state_action = tf.concat([state, action], axis=-1)
+
+            # update critic 0
+            with tf.GradientTape() as tape:
+                q_output = agent.model.critic0(state_action)['q_values']
+                loss = tf.keras.losses.MSE(critic_target, q_output)
+
+            total_loss += loss
+            gradients = tape.gradient(loss, agent.model.critic0.trainable_variables)
+            optimizer.apply_gradients(zip(gradients, agent.model.critic0.trainable_variables))
+
+            # update critic 1
+            with tf.GradientTape() as tape:
+                q_output = agent.model.critic1(state_action)['q_values']
+                loss = tf.keras.losses.MSE(critic_target, q_output)
+
+            total_loss += loss
+            gradients = tape.gradient(loss, agent.model.critic1.trainable_variables)
+            optimizer.apply_gradients(zip(gradients, agent.model.critic1.trainable_variables))
+
+            # update actor
+            if e % policy_delay == 0:
+                with tf.GradientTape() as tape:
+                    # TODO: why sum?
+                    action_prob = tf.reduce_sum(agent.flowing_log_prob(state, action), axis=-1)
+                    state_action = tf.concat([state, action_prob], axis=-1)
+                    q_val = agent.model.critic0(state_action)
+                    actor_loss = - tf.reduce_mean(q_val)
+
+                total_loss += actor_loss
+                actor_gradients = tape.gradient(actor_loss, agent.model.actor.trainable_variables)
+                optimizer.apply_gradients(zip(actor_gradients, agent.model.actor.trainable_variables))
+
+            # Update agent
+            manager.set_agent(agent.get_weights())
+            agent = manager.get_agent()
+
+        reward = manager.test(test_steps, evaluation_measure="reward")
+        manager.update_aggregator(loss=total_loss, reward=reward)
+        print(
+            f"epoch ::: {e}  loss ::: {total_loss}   avg reward ::: {np.mean(reward)}"
+        )
+
+        if e % saving_after == 0:
+            manager.save_model(saving_path, e)
+
+    manager.load_model(saving_path)
+    print("done")
+    print("testing optimized agent")
+    manager.test(test_steps, test_episodes=10, render=True)
