@@ -13,7 +13,7 @@ from really import SampleManager
 from really.utils import (
     dict_to_dict_of_datasets,
 )
-from copy import deepcopy
+from copy import copy
 
 
 class TD3Actor(tf.keras.layers.Layer):
@@ -126,9 +126,9 @@ if __name__ == "__main__":
 
     env_test_instance = gym.make('BipedalWalker-v3')
     model_kwargs = {
-        'action_dimension': deepcopy(env_test_instance.action_space.shape[0]),
-        'min_action': deepcopy(env_test_instance.action_space.low),
-        'max_action': deepcopy(env_test_instance.action_space.high)
+        'action_dimension': copy(env_test_instance.action_space.shape[0]),
+        'min_action': copy(env_test_instance.action_space.low),
+        'max_action': copy(env_test_instance.action_space.high)
     }
     del env_test_instance
 
