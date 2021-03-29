@@ -7,6 +7,7 @@ import tensorflow as tf
 from tensorflow.keras.layers import Dense, LeakyReLU
 import numpy as np
 import gym
+from gym.envs.box2d import BipedalWalker
 import ray
 from really import SampleManager
 from really.utils import (
@@ -54,9 +55,6 @@ class TD3Critic(tf.keras.layers.Layer):
         self.dout = Dense(1, activation=None, dtype=tf.float32)
 
     def call(self, inputs, training=None, mask=None):
-        output = {}
-
-        # pass through network
         hidden = self.d1(inputs)
         hidden = self.d2(hidden)
         dout = self.dout(hidden)
@@ -125,9 +123,10 @@ if __name__ == "__main__":
     policy_delay = 2
     rho = .2
 
+    env = BipedalWalker
     manager = SampleManager(
         TD3Net,
-        'LunarLanderContinuous-v2',
+        BipedalWalker,
         num_parallel=(os.cpu_count() - 1),
         total_steps=150,
         action_sampling_type="continuous_normal_diagonal"
