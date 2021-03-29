@@ -13,6 +13,7 @@ from really import SampleManager
 from really.utils import (
     dict_to_dict_of_datasets,
 )
+from copy import deepcopy
 
 
 class TD3Actor(tf.keras.layers.Layer):
@@ -123,13 +124,21 @@ if __name__ == "__main__":
     policy_delay = 2
     rho = .2
 
-    env = BipedalWalker
+    env_test_instance = gym.make('BipedalWalker-v3')
+    model_kwargs = {
+        'action_dimension': deepcopy(env_test_instance.action_space.shape[0]),
+        'min_action': deepcopy(env_test_instance.action_space.low),
+        'max_action': deepcopy(env_test_instance.action_space.high)
+    }
+    del env_test_instance
+
     manager = SampleManager(
         TD3Net,
-        BipedalWalker,
+        'BipedalWalker-v3',
         num_parallel=(os.cpu_count() - 1),
         total_steps=150,
-        action_sampling_type="continuous_normal_diagonal"
+        action_sampling_type="continuous_normal_diagonal",
+        model_kwargs=model_kwargs
     )
 
     optim_keys = [
@@ -167,8 +176,10 @@ if __name__ == "__main__":
         sample_dict = manager.sample(sample_size, from_buffer=True)
         print(f"collected data for: {sample_dict.keys()}")
 
-        sample_dict['reward'] = tf.cast(sample_dict['reward'], tf.float32)
+        sample_dict['state'] = tf.cast(sample_dict['state'], tf.float32)
         sample_dict['action'] = tf.cast(sample_dict['action'], tf.float32)
+        sample_dict['reward'] = tf.cast(sample_dict['reward'], tf.float32)
+        sample_dict['state_new'] = tf.cast(sample_dict['state_new'], tf.float32)
         sample_dict['not_done'] = tf.cast(sample_dict['not_done'], tf.float32)
         data_dict = dict_to_dict_of_datasets(sample_dict, batch_size=optim_batch_size)
 
