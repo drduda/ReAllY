@@ -161,11 +161,7 @@ if __name__ == "__main__":
 
     # fill buffer
     print("Filling buffer before training..")
-    while True:
-        # Check if buffer is already filled
-        if len(manager.buffer.buffer[manager.buffer.keys[0]]) >= manager.buffer.size:
-            break
-
+    while len(manager.buffer.buffer[manager.buffer.keys[0]]) < manager.buffer.size:
         # Gives you state action reward trajectories
         data = manager.get_data()
         manager.store_in_buffer(data)
