@@ -56,6 +56,7 @@ class TD3Critic(tf.keras.layers.Layer):
         self.dout = Dense(1, activation=None, dtype=tf.float32)
 
     def call(self, inputs, training=None, mask=None):
+
         hidden = self.d1(inputs)
         hidden = self.d2(hidden)
         dout = self.dout(hidden)
@@ -112,16 +113,16 @@ if __name__ == "__main__":
 
     ray.init(log_to_driver=False)
 
-    buffer_size = 200
-    epochs = 2
-    saving_path = os.getcwd() + "/smp_results"
+    buffer_size = 2000
+    epochs = 50
+    saving_path = os.getcwd() + "/smp_monolithic_results"
     saving_after = 5
     sample_size = 15
     optim_batch_size = 8
     gamma = .99
-    test_steps = 10
+    test_steps = 1000
+    total_steps = 150
     update_interval = 4
-    policy_delay = 2
     rho = .2
 
     env_test_instance = gym.make('BipedalWalker-v3')
@@ -136,7 +137,7 @@ if __name__ == "__main__":
         TD3Net,
         'BipedalWalker-v3',
         num_parallel=(os.cpu_count() - 1),
-        total_steps=150,
+        total_steps=total_steps,
         action_sampling_type="continuous_normal_diagonal",
         model_kwargs=model_kwargs
     )
@@ -225,7 +226,7 @@ if __name__ == "__main__":
             optimizer.apply_gradients(zip(gradients, agent.model.critic1.trainable_variables))
 
             # update actor
-            if e % policy_delay == 0:
+            if e % update_interval == 0:
                 with tf.GradientTape() as tape:
                     actor_output = agent.model.actor(state)
                     action = actor_output['mu'] + actor_output['sigma'] * tf.random.normal(actor_output['mu'].shape, 0., 1., dtype=tf.float32)
@@ -242,7 +243,7 @@ if __name__ == "__main__":
             manager.set_agent(agent.get_weights())
             agent = manager.get_agent()
 
-            if e % policy_delay == 0:
+            if e % update_interval == 0:
                 # Polyak averaging
                 new_weights = [rho * target_agent.get_weights()[i] + (1 - rho) * manager.get_agent().get_weights()[i]
                                for i in range(len(agent.get_weights()))]
