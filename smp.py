@@ -18,14 +18,14 @@ from copy import copy
 
 class TD3Actor(tf.keras.layers.Layer):
 
-    def __init__(self, action_dimension=2, min_action=-1, max_action=1):
+    def __init__(self, action_dimension=2, min_action=-1, max_action=1, hid_units=16):
         super(TD3Actor, self).__init__()
         self.action_dimension = action_dimension
         self.min_action = min_action
         self.max_action = max_action
 
-        self.d1 = Dense(16, activation=LeakyReLU(), dtype=tf.float32)
-        self.d2 = Dense(32, activation=LeakyReLU(), dtype=tf.float32)
+        self.d1 = Dense(hid_units, activation=LeakyReLU(), dtype=tf.float32)
+        self.d2 = Dense(hid_units, activation=LeakyReLU(), dtype=tf.float32)
         self.dout = Dense(self.action_dimension*2, activation=None, dtype=tf.float32)
 
     def call(self, inputs, training=None, mask=None):
@@ -44,6 +44,16 @@ class TD3Actor(tf.keras.layers.Layer):
 
     def get_config(self):
         return super().get_config()
+
+class SMPActor(TD3Actor):
+    def __init__(self):
+        #todo look up hid_units
+        super(SMPActor, self).__init__(action_dimension=1, min_action=-1, max_action=1, hid_units=4)
+
+    def call(self, inputs, training=None, mask=None):
+        pass
+
+
 
 
 class TD3Critic(tf.keras.layers.Layer):
@@ -67,12 +77,15 @@ class TD3Critic(tf.keras.layers.Layer):
 
 
 class TD3Net(tf.keras.Model):
-    def __init__(self, action_dimension=2, min_action=-1, max_action=1):
+    def __init__(self, action_dimension=2, min_action=-1, max_action=1, smp=True):
         super(TD3Net, self).__init__()
         self.action_dimension = action_dimension
         self.min_action = min_action
         self.max_action = max_action
-        self.actor = TD3Actor(self.action_dimension, self.min_action, self.max_action)
+        if smp:
+            self.actor = SMPActor()
+        else:
+            self.actor = TD3Actor(self.action_dimension, self.min_action, self.max_action)
 
         self.critic0 = TD3Critic()
         self.critic1 = TD3Critic()
