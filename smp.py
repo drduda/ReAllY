@@ -45,17 +45,68 @@ class TD3Actor(tf.keras.layers.Layer):
     def get_config(self):
         return super().get_config()
 
-class SMPActor(TD3Actor):
+
+
+class SMP(tf.keras.layers.Layer):
+    def __init__(self, up_in_dim):
+        super(SMP, self).__init__()
+        # todo change architecture
+        # Upwards policy: message_up =policy_up(state, message_child)
+        up_1 = Dense(self.message_dimension + self.state_dimesion, activation=LeakyReLU(), dtype=tf.float32)
+        up_2 = Dense(self.message_dimension, activation=None, dtype=tf.float32)
+        self.up_policy = [up_1, up_2]
+
+        # Downwards policy: action, message_down = policy_down(message_up, message,down)
+        down_1 = Dense(self.message_dimension * 2, activation=LeakyReLU(), dtype=tf.float32)
+        down_2 = Dense(self.message_dimension + self.action_dimension, activation=None, dtype=tf.float32)
+        self.down_policy = [down_1, down_2]
+
+
+class SMPActor(tf.keras.layers.Layer):
     def __init__(self):
-        #todo look up hid_units
-        super(SMPActor, self).__init__(action_dimension=1, min_action=-1, max_action=1, hid_units=4)
+        super(SMPActor, self).__init__()
+        self.action_dimension=1
+        self.min_action = -1
+        self.max_action = 1
+        self.message_dimension = 8
+        self.number_modules = 5
+
+        self.knees_state_index = [0,1]
+        self.hips_state_index = [2,3]
+        self.head_state_index = 4
+
+        # Upwards policy: message =policy_up(state, message1, message2)
+        self.up_policy = tf.keras.Sequential()
+        self.up_policy.add(Dense(self.message_dimension, activation=LeakyReLU(), dtype=tf.float32))
+        self.up_policy.add(Dense(self.message_dimension, activation=None, dtype=tf.float32))
+
+
+        # Downwards policy: action, message1, message2 = policy_down(message_up, message,down)
+        self.down_policy = tf.keras.Sequential()
+        self.down_policy.add(Dense(self.message_dimension, activation=LeakyReLU(), dtype=tf.float32))
+        self.down_policy.add(Dense(self.message_dimension*2+self.action_dimension,
+                                   activation=None, dtype=tf.float32))
+
+
 
     def call(self, inputs, training=None, mask=None):
-        pass
+        #todo just proof of concept not valid modular states
+        batch_size = len(inputs)
+        inputs = tf.reshape(inputs, [batch_size, self.number_modules, -1])
+        knee = inputs[:, self.knees_state_index, :]
+
+        # Upwards policy: message_parent =policy_up(state, message_child)
+        messages = tf.zeros((batch_size, self.message_dimension))
 
 
 
 
+
+
+
+
+
+#todo why not module?
 class TD3Critic(tf.keras.layers.Layer):
 
     def __init__(self):
