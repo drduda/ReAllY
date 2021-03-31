@@ -16,6 +16,79 @@ from really.utils import (
 from copy import copy
 
 
+def convert_mono_to_modular_state(mono_state):
+    """
+    The first leg is considered the *left* leg and the second one is considered the *right* one. The hull
+    velocity and the ground contact are only given to the respective joints (head joint and knee joints) and
+    is then expected to be passed indirectly to the other joints via messages.
+    """
+
+    hull_angle = mono_state[:, 0]
+    hull_speed = mono_state[:, 1]
+    vel_x = mono_state[:, 2]
+    vel_y = mono_state[:, 3]
+    hip_angle_l = mono_state[:, 4]
+    hip_speed_l = mono_state[:, 5]
+    knee_angle_l = mono_state[:, 6]
+    knee_speed_l = mono_state[:, 7]
+    ground_contact_l = mono_state[:, 8]
+    hip_angle_r = mono_state[:, 9]
+    hip_speed_r = mono_state[:, 10]
+    knee_angle_r = mono_state[:, 11]
+    knee_speed_r = mono_state[:, 12]
+    ground_contact_r = mono_state[:, 13]
+
+    """
+    Joint state:
+        angle
+        speed
+        foot ground contact
+        head velocity x
+        head velocity y
+    """
+    knee_state_l = np.array([
+        knee_angle_l,
+        knee_speed_l,
+        ground_contact_l,
+        0.,
+        0.
+    ])
+    knee_state_r = np.array([
+        knee_angle_r,
+        knee_speed_r,
+        ground_contact_r,
+        0.,
+        0.
+    ])
+    hip_state_l = np.array([
+        hip_angle_l,
+        hip_speed_l,
+        0.,
+        0.,
+        0.
+    ])
+    hip_state_r = np.array([
+        hip_angle_r,
+        hip_speed_r,
+        0.,
+        0.,
+        0.
+    ])
+    head_state = np.array([
+        hull_angle,
+        hull_speed,
+        0.,
+        vel_x,
+        vel_y
+    ])
+
+    return (knee_state_l, knee_state_r, hip_state_l, hip_state_r, head_state)
+
+
+def convert_modular_to_mono_action(action_hip_l, action_knee_l, action_hip_r, action_knee_r):
+    return tf.concat([action_hip_l, action_knee_l, action_hip_r, action_knee_r], axis=1)
+
+
 class TD3Actor(tf.keras.layers.Layer):
 
     def __init__(self, action_dimension=2, min_action=-1, max_action=1, hid_units=16):
@@ -45,6 +118,7 @@ class TD3Actor(tf.keras.layers.Layer):
     def get_config(self):
         return super().get_config()
 
+
 class Policy(tf.keras.layers.Layer):
     def __init__(self, out_dim):
         # todo change architecture
@@ -70,26 +144,41 @@ class UpPolicy(Policy):
 
 
 class DownPolicy(Policy):
-    def __init__(self, message_dim, action_dim):
-        super(DownPolicy, self).__init__(message_dim*2+action_dim)
+    def __init__(self, message_dim, action_dim, min_action, max_action):
+        super(DownPolicy, self).__init__(action_dim * 2 + message_dim * 2)
         self.action_dim = action_dim
         self.message_dim = message_dim
+        self.min_action = min_action
+        self.max_action = max_action
 
     def __call__(self, message_up, message_down):
         inputs = tf.concat([message_up, message_down], axis=-1)
         output = super().call(inputs)
-        action = output[:, -self.action_dim:]
-        message_1 = output[:, :self.message_dim]
-        message_2 = output[:, self.message_dim:self.message_dim*2]
+
+        """
+        output structure: [message_1|message_2|action_mu|action_sigma]
+        """
+
+        action_mu = output[:, 2 * self.message_dim:-self.action_dim]
+        action_sigma = output[:, 2 * self.message_dim + self.action_dim:]
+        message_1 = output[:, :- self.message_dim - 2 * self.action_dim]
+        message_2 = output[:, self.message_dim:- 2 * self.action_dim]
+
+        action_sigma = tf.exp(action_sigma)
+
+        # re-parameterization
+        action = action_mu + action_sigma * tf.random.normal([self.action_dimension], 0., 1., dtype=tf.float32)
+        action = tf.clip_by_value(action, self.min_action, self.max_action)
+
         return action, message_1, message_2
 
 
 class SMPActor(tf.keras.layers.Layer):
-    def __init__(self):
+    def __init__(self, action_dimension, min_action, max_action):
         super(SMPActor, self).__init__()
-        self.action_dimension=1
-        self.min_action = -1
-        self.max_action = 1
+        self.action_dimension = action_dimension
+        self.min_action = min_action
+        self.max_action = max_action
         self.message_dimension = 8
         self.number_modules = 5
 
@@ -101,18 +190,13 @@ class SMPActor(tf.keras.layers.Layer):
         self.up_policy = UpPolicy(self.message_dimension)
 
         # Downwards policy: action, message1, message2 = policy_down(message_up, message,down)
-        self.down_policy = DownPolicy(self.message_dimension, self.action_dimension)
+        self.down_policy = DownPolicy(self.message_dimension, self.action_dimension, self.min_action, self.max_action)
 
     def call(self, inputs, training=None, mask=None):
         batch_size = len(inputs)
-        #todo just proof of concept not valid modular states
-        inputs = inputs[:, :-9]
+        inputs = inputs[:, :-10]
         inputs = tf.reshape(inputs, [batch_size, self.number_modules, -1])
-        knee_state_l = inputs[:,1,:]
-        knee_state_r = knee_state_l
-        hip_state_l = inputs[:,0,:]
-        hip_state_r = hip_state_l
-        head_state = hip_state_r
+        knee_state_l, knee_state_r, hip_state_l, hip_state_r, head_state = convert_mono_to_modular_state(inputs)
 
         # Upwards policy
         up_messages_from_ground = tf.zeros((batch_size, self.message_dimension))
@@ -127,21 +211,24 @@ class SMPActor(tf.keras.layers.Layer):
         up_message_from_head = self.up_policy(head_state, up_message_from_hip_l, up_message_from_hip_r)
 
         # Downwards policy
-        #todo action head is different from paper concept!
-        action_head, down_message_from_head_l, down_message_from_head_r = self.down_policy(
+        # action for head is not needed
+        _, down_message_from_head_l, down_message_from_head_r = self.down_policy(
             up_message_from_head,
             tf.zeros_like(up_message_from_head)
         )
 
+        # use different message channels for each side
         action_hip_l, down_message_from_hip_l, _ = self.down_policy(up_message_from_hip_l, down_message_from_head_l)
-        action_hip_r, down_message_from_hip_r, _ = self.down_policy(up_message_from_hip_r, down_message_from_head_r)
+        action_hip_r, _, down_message_from_hip_r = self.down_policy(up_message_from_hip_r, down_message_from_head_r)
 
         action_knee_l, _, _ = self.down_policy(up_message_from_knee_l, down_message_from_hip_l)
         action_knee_r, _, _ = self.down_policy(up_message_from_knee_r, down_message_from_hip_r)
 
+        action_out = convert_modular_to_mono_action(action_hip_l, action_knee_l, action_hip_r, action_knee_r)
+        return action_out
 
 
-#todo why not module?
+# todo why not module?
 class TD3Critic(tf.keras.layers.Layer):
 
     def __init__(self):
@@ -169,7 +256,7 @@ class TD3Net(tf.keras.Model):
         self.min_action = min_action
         self.max_action = max_action
         if smp:
-            self.actor = SMPActor()
+            self.actor = SMPActor(self.action_dimension, self.min_action, self.max_action)
         else:
             self.actor = TD3Actor(self.action_dimension, self.min_action, self.max_action)
 
@@ -225,9 +312,11 @@ if __name__ == "__main__":
 
     env_test_instance = gym.make('BipedalWalker-v3')
     model_kwargs = {
-        'action_dimension': copy(env_test_instance.action_space.shape[0]),
+        # action dimension for modular actions
+        'action_dimension': 1,
         'min_action': copy(env_test_instance.action_space.low),
-        'max_action': copy(env_test_instance.action_space.high)
+        'max_action': copy(env_test_instance.action_space.high),
+        'smp': True
     }
     del env_test_instance
 
