@@ -22,6 +22,7 @@ def convert_mono_to_modular_state(mono_state):
     velocity and the ground contact are only given to the respective joints (head joint and knee joints) and
     is then expected to be passed indirectly to the other joints via messages.
     """
+    batch_size = len(mono_state)
 
     hull_angle = mono_state[:, 0]
     hull_speed = mono_state[:, 1]
@@ -46,47 +47,54 @@ def convert_mono_to_modular_state(mono_state):
         head velocity x
         head velocity y
     """
-    knee_state_l = np.array([
+    knee_state_l = tf.reshape(tf.concat([
         knee_angle_l,
         knee_speed_l,
         ground_contact_l,
-        0.,
-        0.
-    ])
-    knee_state_r = np.array([
+        tf.zeros_like(knee_angle_l),
+        tf.zeros_like(knee_angle_l)
+    ], axis=-1), [batch_size, 5])
+    knee_state_r = tf.reshape(tf.concat([
         knee_angle_r,
         knee_speed_r,
         ground_contact_r,
-        0.,
-        0.
-    ])
-    hip_state_l = np.array([
+        tf.zeros_like(knee_angle_r),
+        tf.zeros_like(knee_angle_r)
+    ], axis=-1), [batch_size, 5])
+    hip_state_l = tf.reshape(tf.concat([
         hip_angle_l,
         hip_speed_l,
-        0.,
-        0.,
-        0.
-    ])
-    hip_state_r = np.array([
+        tf.zeros_like(hip_angle_l),
+        tf.zeros_like(hip_angle_l),
+        tf.zeros_like(hip_angle_l)
+    ], axis=-1), [batch_size, 5])
+    hip_state_r = tf.reshape(tf.concat([
         hip_angle_r,
         hip_speed_r,
-        0.,
-        0.,
-        0.
-    ])
-    head_state = np.array([
+        tf.zeros_like(hip_angle_r),
+        tf.zeros_like(hip_angle_r),
+        tf.zeros_like(hip_angle_r)
+    ], axis=-1), [batch_size, 5])
+    head_state = tf.reshape(tf.concat([
         hull_angle,
         hull_speed,
-        0.,
+        tf.zeros_like(hull_angle),
         vel_x,
         vel_y
-    ])
+    ], axis=-1), [batch_size, 5])
 
     return (knee_state_l, knee_state_r, hip_state_l, hip_state_r, head_state)
 
 
 def convert_modular_to_mono_action(action_hip_l, action_knee_l, action_hip_r, action_knee_r):
     return tf.concat([action_hip_l, action_knee_l, action_hip_r, action_knee_r], axis=1)
+
+
+def reparam_action(act_dist, action_dimension, min_action, max_action):
+    # re-parameterization
+    action_out = act_dist['mu'] + act_dist['sigma'] * tf.random.normal([action_dimension], 0., 1., dtype=tf.float32)
+    action_out = tf.clip_by_value(action_out, min_action, max_action)
+    return action_out
 
 
 class TD3Actor(tf.keras.layers.Layer):
@@ -161,14 +169,15 @@ class DownPolicy(Policy):
 
         action_mu = output[:, 2 * self.message_dim:-self.action_dim]
         action_sigma = output[:, 2 * self.message_dim + self.action_dim:]
+        action_sigma = tf.exp(action_sigma)
+
         message_1 = output[:, :- self.message_dim - 2 * self.action_dim]
         message_2 = output[:, self.message_dim:- 2 * self.action_dim]
 
-        action_sigma = tf.exp(action_sigma)
-
-        # re-parameterization
-        action = action_mu + action_sigma * tf.random.normal([self.action_dimension], 0., 1., dtype=tf.float32)
-        action = tf.clip_by_value(action, self.min_action, self.max_action)
+        action = {
+            'mu': action_mu,
+            'sigma': action_sigma
+        }
 
         return action, message_1, message_2
 
@@ -194,8 +203,9 @@ class SMPActor(tf.keras.layers.Layer):
 
     def call(self, inputs, training=None, mask=None):
         batch_size = len(inputs)
+
+        # discard lidar for now
         inputs = inputs[:, :-10]
-        inputs = tf.reshape(inputs, [batch_size, self.number_modules, -1])
         knee_state_l, knee_state_r, hip_state_l, hip_state_r, head_state = convert_mono_to_modular_state(inputs)
 
         # Upwards policy
@@ -224,7 +234,21 @@ class SMPActor(tf.keras.layers.Layer):
         action_knee_l, _, _ = self.down_policy(up_message_from_knee_l, down_message_from_hip_l)
         action_knee_r, _, _ = self.down_policy(up_message_from_knee_r, down_message_from_hip_r)
 
-        action_out = convert_modular_to_mono_action(action_hip_l, action_knee_l, action_hip_r, action_knee_r)
+        action_out = {
+            'mu': convert_modular_to_mono_action(
+                action_hip_l['mu'],
+                action_knee_l['mu'],
+                action_hip_r['mu'],
+                action_knee_r['mu']
+            ),
+            'sigma': convert_modular_to_mono_action(
+                action_hip_l['sigma'],
+                action_knee_l['sigma'],
+                action_hip_r['sigma'],
+                action_knee_r['sigma']
+            ),
+        }
+
         return action_out
 
 
@@ -314,8 +338,8 @@ if __name__ == "__main__":
     model_kwargs = {
         # action dimension for modular actions
         'action_dimension': 1,
-        'min_action': copy(env_test_instance.action_space.low),
-        'max_action': copy(env_test_instance.action_space.high),
+        'min_action': copy(env_test_instance.action_space.low)[0],
+        'max_action': copy(env_test_instance.action_space.high)[0],
         'smp': True
     }
     del env_test_instance
