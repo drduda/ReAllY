@@ -115,26 +115,29 @@ class SMPActor(tf.keras.layers.Layer):
         head_state = hip_state_r
 
         # Upwards policy
-        up_messages_0 = tf.zeros((batch_size, self.message_dimension))
+        up_messages_from_ground = tf.zeros((batch_size, self.message_dimension))
 
         # message_parent = policy_up(state, message_child)
-        up_message_1_l = self.up_policy(knee_state_l, up_messages_0)
-        up_message_1_r = self.up_policy(knee_state_r, up_messages_0)
+        up_message_from_knee_l = self.up_policy(knee_state_l, up_messages_from_ground)
+        up_message_from_knee_r = self.up_policy(knee_state_r, up_messages_from_ground)
 
-        up_message_2_l = self.up_policy(hip_state_l, up_message_1_l)
-        up_message_2_r = self.up_policy(hip_state_r, up_message_1_r)
+        up_message_from_hip_l = self.up_policy(hip_state_l, up_message_from_knee_l)
+        up_message_from_hip_r = self.up_policy(hip_state_r, up_message_from_knee_r)
 
-        up_message_final = self.up_policy(head_state, up_message_2_l, up_message_2_r)
+        up_message_from_head = self.up_policy(head_state, up_message_from_hip_l, up_message_from_hip_r)
 
         # Downwards policy
         #todo action head is different from paper concept!
-        action_head, down_message_2_l, down_message2_r = self.down_policy(up_message_final, tf.zeros_like(up_message_final))
+        action_head, down_message_from_head_l, down_message_from_head_r = self.down_policy(
+            up_message_from_head,
+            tf.zeros_like(up_message_from_head)
+        )
 
-        action_hip_l, down_message_1_l, _ = self.down_policy(up_message_2_l, down_message_2_l)
-        action_hip_r, down_message_1_r, _ = self.down_policy(up_message_2_r, down_message2_r)
+        action_hip_l, down_message_from_hip_l, _ = self.down_policy(up_message_from_hip_l, down_message_from_head_l)
+        action_hip_r, down_message_from_hip_r, _ = self.down_policy(up_message_from_hip_r, down_message_from_head_r)
 
-        action_knee_l, _, _ = self.down_policy(up_message_1_l, down_message_1_l)
-        action_knee_r, _, _ = self.down_policy(up_message_1_r, down_message_1_r)
+        action_knee_l, _, _ = self.down_policy(up_message_from_knee_l, down_message_from_hip_l)
+        action_knee_r, _, _ = self.down_policy(up_message_from_knee_r, down_message_from_hip_r)
 
 
 
