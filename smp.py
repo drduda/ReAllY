@@ -56,6 +56,7 @@ class Policy(tf.keras.layers.Layer):
         hidden = self.d1(inputs)
         return self.d2(hidden)
 
+
 class UpPolicy(Policy):
     # Upwards policy: message_up =policy_up(state, message_child)
     def __init__(self, message_dim):
@@ -66,6 +67,21 @@ class UpPolicy(Policy):
             message_child_2 = tf.zeros_like(message_child_1)
         inputs = tf.concat([state, message_child_1, message_child_2], axis=-1)
         return super().call(inputs)
+
+
+class DownPolicy(Policy):
+    def __init__(self, message_dim, action_dim):
+        super(DownPolicy, self).__init__(message_dim*2+action_dim)
+        self.action_dim = action_dim
+        self.message_dim = message_dim
+
+    def __call__(self, message_up, message_down):
+        inputs = tf.concat([message_up, message_down], axis=-1)
+        output = super().call(inputs)
+        action = output[:, -self.action_dim:]
+        message_1 = output[:, :self.message_dim]
+        message_2 = output[:, self.message_dim:self.message_dim*2]
+        return action, message_1, message_2
 
 
 class SMPActor(tf.keras.layers.Layer):
@@ -85,7 +101,7 @@ class SMPActor(tf.keras.layers.Layer):
         self.up_policy = UpPolicy(self.message_dimension)
 
         # Downwards policy: action, message1, message2 = policy_down(message_up, message,down)
-
+        self.down_policy = DownPolicy(self.message_dimension, self.action_dimension)
 
     def call(self, inputs, training=None, mask=None):
         batch_size = len(inputs)
@@ -110,7 +126,16 @@ class SMPActor(tf.keras.layers.Layer):
 
         up_message_final = self.up_policy(head_state, up_message_2_l, up_message_2_r)
 
-        pass
+        # Downwards policy
+        #todo action head is different from paper concept!
+        action_head, down_message_2_l, down_message2_r = self.down_policy(up_message_final, tf.zeros_like(up_message_final))
+
+        action_hip_l, down_message_1_l, _ = self.down_policy(up_message_2_l, down_message_2_l)
+        action_hip_r, down_message_1_r, _ = self.down_policy(up_message_2_r, down_message2_r)
+
+        action_knee_l, _, _ = self.down_policy(up_message_1_l, down_message_1_l)
+        action_knee_r, _, _ = self.down_policy(up_message_1_r, down_message_1_r)
+
 
 
 #todo why not module?
