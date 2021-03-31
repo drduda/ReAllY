@@ -61,7 +61,9 @@ class UpPolicy(Policy):
     def __init__(self, message_dim):
         super(UpPolicy, self).__init__(message_dim)
 
-    def __call__(self, state, message_child_1, message_child_2):
+    def __call__(self, state, message_child_1, message_child_2=None):
+        if message_child_2 is None:
+            message_child_2 = tf.zeros_like(message_child_1)
         inputs = tf.concat([state, message_child_1, message_child_2], axis=-1)
         return super().call(inputs)
 
@@ -90,12 +92,25 @@ class SMPActor(tf.keras.layers.Layer):
         #todo just proof of concept not valid modular states
         inputs = inputs[:, :-9]
         inputs = tf.reshape(inputs, [batch_size, self.number_modules, -1])
-        #todo knee state double
-        knee_state = inputs[:, 3, :]
+        knee_state_l = inputs[:,1,:]
+        knee_state_r = knee_state_l
+        hip_state_l = inputs[:,0,:]
+        hip_state_r = hip_state_l
+        head_state = hip_state_r
 
-        # Upwards policy: message_parent =policy_up(state, message_child)
-        messages = tf.zeros((batch_size, self.message_dimension))
-        up_message = self.up_policy(knee_state, messages, messages)
+        # Upwards policy
+        up_messages_0 = tf.zeros((batch_size, self.message_dimension))
+
+        # message_parent = policy_up(state, message_child)
+        up_message_1_l = self.up_policy(knee_state_l, up_messages_0)
+        up_message_1_r = self.up_policy(knee_state_r, up_messages_0)
+
+        up_message_2_l = self.up_policy(hip_state_l, up_message_1_l)
+        up_message_2_r = self.up_policy(hip_state_r, up_message_1_r)
+
+        up_message_final = self.up_policy(head_state, up_message_2_l, up_message_2_r)
+
+        pass
 
 
 #todo why not module?
