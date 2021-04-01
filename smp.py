@@ -16,16 +16,97 @@ from really.utils import (
 from copy import copy
 
 
+def convert_mono_to_modular_state(mono_state):
+    """
+    The first leg is considered the *left* leg and the second one is considered the *right* one. The hull
+    velocity and the ground contact are only given to the respective joints (head joint and knee joints) and
+    is then expected to be passed indirectly to the other joints via messages.
+    """
+    batch_size = len(mono_state)
+
+    hull_angle = mono_state[:, 0]
+    hull_speed = mono_state[:, 1]
+    vel_x = mono_state[:, 2]
+    vel_y = mono_state[:, 3]
+    hip_angle_l = mono_state[:, 4]
+    hip_speed_l = mono_state[:, 5]
+    knee_angle_l = mono_state[:, 6]
+    knee_speed_l = mono_state[:, 7]
+    ground_contact_l = mono_state[:, 8]
+    hip_angle_r = mono_state[:, 9]
+    hip_speed_r = mono_state[:, 10]
+    knee_angle_r = mono_state[:, 11]
+    knee_speed_r = mono_state[:, 12]
+    ground_contact_r = mono_state[:, 13]
+
+    """
+    Joint state:
+        angle
+        speed
+        foot ground contact
+        head velocity x
+        head velocity y
+    """
+    knee_state_l = tf.reshape(tf.concat([
+        knee_angle_l,
+        knee_speed_l,
+        ground_contact_l,
+        tf.zeros_like(knee_angle_l),
+        tf.zeros_like(knee_angle_l)
+    ], axis=-1), [batch_size, 5])
+    knee_state_r = tf.reshape(tf.concat([
+        knee_angle_r,
+        knee_speed_r,
+        ground_contact_r,
+        tf.zeros_like(knee_angle_r),
+        tf.zeros_like(knee_angle_r)
+    ], axis=-1), [batch_size, 5])
+    hip_state_l = tf.reshape(tf.concat([
+        hip_angle_l,
+        hip_speed_l,
+        tf.zeros_like(hip_angle_l),
+        tf.zeros_like(hip_angle_l),
+        tf.zeros_like(hip_angle_l)
+    ], axis=-1), [batch_size, 5])
+    hip_state_r = tf.reshape(tf.concat([
+        hip_angle_r,
+        hip_speed_r,
+        tf.zeros_like(hip_angle_r),
+        tf.zeros_like(hip_angle_r),
+        tf.zeros_like(hip_angle_r)
+    ], axis=-1), [batch_size, 5])
+    head_state = tf.reshape(tf.concat([
+        hull_angle,
+        hull_speed,
+        tf.zeros_like(hull_angle),
+        vel_x,
+        vel_y
+    ], axis=-1), [batch_size, 5])
+
+    return (knee_state_l, knee_state_r, hip_state_l, hip_state_r, head_state)
+
+
+def convert_modular_to_mono_action(action_hip_l, action_knee_l, action_hip_r, action_knee_r):
+    return tf.concat([action_hip_l, action_knee_l, action_hip_r, action_knee_r], axis=1)
+
+
+def reparam_action(act_dist, action_dimension, min_action, max_action):
+    # re-parameterization
+    action_out = act_dist['mu'] + act_dist['sigma'] * tf.random.normal([action_dimension], 0., 1., dtype=tf.float32)
+    action_out = tf.clip_by_value(action_out, min_action, max_action)
+    return action_out
+
+
 class TD3Actor(tf.keras.layers.Layer):
 
-    def __init__(self, action_dimension=2, min_action=-1, max_action=1):
+    def __init__(self, action_dimension=2, min_action=-1, max_action=1, hid_units=16):
         super(TD3Actor, self).__init__()
         self.action_dimension = action_dimension
         self.min_action = min_action
         self.max_action = max_action
 
-        self.d1 = Dense(16, activation=LeakyReLU(), dtype=tf.float32)
-        self.d2 = Dense(32, activation=LeakyReLU(), dtype=tf.float32)
+        self.d1 = Dense(hid_units, activation=LeakyReLU(), dtype=tf.float32)
+        self.d2 = Dense(hid_units, activation=LeakyReLU(), dtype=tf.float32)
         self.dout = Dense(self.action_dimension*2, activation=None, dtype=tf.float32)
 
     def call(self, inputs, training=None, mask=None):
@@ -46,6 +127,132 @@ class TD3Actor(tf.keras.layers.Layer):
         return super().get_config()
 
 
+class Policy(tf.keras.layers.Layer):
+    def __init__(self, out_dim):
+        # todo change architecture
+        super(Policy, self).__init__()
+        self.d1 = Dense(out_dim, activation=LeakyReLU(), dtype=tf.float32)
+        self.d2 = Dense(out_dim, activation=None, dtype=tf.float32)
+
+    def call(self, inputs, training=None, mask=None):
+        hidden = self.d1(inputs)
+        return self.d2(hidden)
+
+
+class UpPolicy(Policy):
+    # Upwards policy: message_up =policy_up(state, message_child)
+    def __init__(self, message_dim):
+        super(UpPolicy, self).__init__(message_dim)
+
+    def __call__(self, state, message_child_1, message_child_2=None):
+        if message_child_2 is None:
+            message_child_2 = tf.zeros_like(message_child_1)
+        inputs = tf.concat([state, message_child_1, message_child_2], axis=-1)
+        return super().call(inputs)
+
+
+class DownPolicy(Policy):
+    def __init__(self, message_dim, action_dim, min_action, max_action):
+        super(DownPolicy, self).__init__(action_dim * 2 + message_dim * 2)
+        self.action_dim = action_dim
+        self.message_dim = message_dim
+        self.min_action = min_action
+        self.max_action = max_action
+
+    def __call__(self, message_up, message_down):
+        inputs = tf.concat([message_up, message_down], axis=-1)
+        output = super().call(inputs)
+
+        """
+        output structure: [message_1|message_2|action_mu|action_sigma]
+        """
+
+        action_mu = output[:, 2 * self.message_dim:-self.action_dim]
+        action_sigma = output[:, 2 * self.message_dim + self.action_dim:]
+        action_sigma = tf.exp(action_sigma)
+
+        message_1 = output[:, :- self.message_dim - 2 * self.action_dim]
+        message_2 = output[:, self.message_dim:- 2 * self.action_dim]
+
+        action = {
+            'mu': action_mu,
+            'sigma': action_sigma
+        }
+
+        return action, message_1, message_2
+
+
+class SMPActor(tf.keras.layers.Layer):
+    def __init__(self, action_dimension, min_action, max_action):
+        super(SMPActor, self).__init__()
+        self.action_dimension = action_dimension
+        self.min_action = min_action
+        self.max_action = max_action
+        self.message_dimension = 8
+        self.number_modules = 5
+
+        self.knees_state_index = [0,1]
+        self.hips_state_index = [2,3]
+        self.head_state_index = 4
+
+        # Upwards policy: message =policy_up(state, message1, message2)
+        self.up_policy = UpPolicy(self.message_dimension)
+
+        # Downwards policy: action, message1, message2 = policy_down(message_up, message,down)
+        self.down_policy = DownPolicy(self.message_dimension, self.action_dimension, self.min_action, self.max_action)
+
+    def call(self, inputs, training=None, mask=None):
+        batch_size = len(inputs)
+
+        # discard lidar for now
+        inputs = inputs[:, :-10]
+        knee_state_l, knee_state_r, hip_state_l, hip_state_r, head_state = convert_mono_to_modular_state(inputs)
+
+        # Upwards policy
+        up_messages_from_ground = tf.zeros((batch_size, self.message_dimension))
+
+        # message_parent = policy_up(state, message_child)
+        up_message_from_knee_l = self.up_policy(knee_state_l, up_messages_from_ground)
+        up_message_from_knee_r = self.up_policy(knee_state_r, up_messages_from_ground)
+
+        up_message_from_hip_l = self.up_policy(hip_state_l, up_message_from_knee_l)
+        up_message_from_hip_r = self.up_policy(hip_state_r, up_message_from_knee_r)
+
+        up_message_from_head = self.up_policy(head_state, up_message_from_hip_l, up_message_from_hip_r)
+
+        # Downwards policy
+        # action for head is not needed
+        _, down_message_from_head_l, down_message_from_head_r = self.down_policy(
+            up_message_from_head,
+            tf.zeros_like(up_message_from_head)
+        )
+
+        # use different message channels for each side
+        action_hip_l, down_message_from_hip_l, _ = self.down_policy(up_message_from_hip_l, down_message_from_head_l)
+        action_hip_r, _, down_message_from_hip_r = self.down_policy(up_message_from_hip_r, down_message_from_head_r)
+
+        action_knee_l, _, _ = self.down_policy(up_message_from_knee_l, down_message_from_hip_l)
+        action_knee_r, _, _ = self.down_policy(up_message_from_knee_r, down_message_from_hip_r)
+
+        action_out = {
+            'mu': convert_modular_to_mono_action(
+                action_hip_l['mu'],
+                action_knee_l['mu'],
+                action_hip_r['mu'],
+                action_knee_r['mu']
+            ),
+            'sigma': convert_modular_to_mono_action(
+                action_hip_l['sigma'],
+                action_knee_l['sigma'],
+                action_hip_r['sigma'],
+                action_knee_r['sigma']
+            ),
+        }
+
+        return action_out
+
+
+# todo why not module?
 class TD3Critic(tf.keras.layers.Layer):
 
     def __init__(self):
@@ -67,12 +274,15 @@ class TD3Critic(tf.keras.layers.Layer):
 
 
 class TD3Net(tf.keras.Model):
-    def __init__(self, action_dimension=2, min_action=-1, max_action=1):
+    def __init__(self, action_dimension=2, min_action=-1, max_action=1, smp=True):
         super(TD3Net, self).__init__()
         self.action_dimension = action_dimension
         self.min_action = min_action
         self.max_action = max_action
-        self.actor = TD3Actor(self.action_dimension, self.min_action, self.max_action)
+        if smp:
+            self.actor = SMPActor(self.action_dimension, self.min_action, self.max_action)
+        else:
+            self.actor = TD3Actor(self.action_dimension, self.min_action, self.max_action)
 
         self.critic0 = TD3Critic()
         self.critic1 = TD3Critic()
@@ -126,9 +336,11 @@ if __name__ == "__main__":
 
     env_test_instance = gym.make('BipedalWalker-v3')
     model_kwargs = {
-        'action_dimension': copy(env_test_instance.action_space.shape[0]),
-        'min_action': copy(env_test_instance.action_space.low),
-        'max_action': copy(env_test_instance.action_space.high)
+        # action dimension for modular actions
+        'action_dimension': 1,
+        'min_action': copy(env_test_instance.action_space.low)[0],
+        'max_action': copy(env_test_instance.action_space.high)[0],
+        'smp': True
     }
     del env_test_instance
 
