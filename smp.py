@@ -18,9 +18,12 @@ from copy import copy
 
 def convert_mono_to_modular_state(mono_state):
     """
-    The first leg is considered the *left* leg and the second one is considered the *right* one. The hull
-    velocity and the ground contact are only given to the respective joints (head joint and knee joints) and
-    is then expected to be passed indirectly to the other joints via messages.
+    :brief Helper function to convert a state obtained from the gym environment to four distinct states for each joint.
+        The first leg is considered the *left* leg and the second one is considered the *right* one. The hull
+        velocity and the ground contact are only given to the respective joints (head joint and knee joints) and
+        is then expected to be passed indirectly to the other joints via messages.
+
+    :param mono_state monolithic state from the gym environment
     """
     batch_size = len(mono_state)
 
@@ -83,7 +86,7 @@ def convert_mono_to_modular_state(mono_state):
         vel_y
     ], axis=-1), [batch_size, 5])
 
-    return (knee_state_l, knee_state_r, hip_state_l, hip_state_r, head_state)
+    return knee_state_l, knee_state_r, hip_state_l, hip_state_r, head_state
 
 
 def convert_modular_to_mono_action(action_hip_l, action_knee_l, action_hip_r, action_knee_r):
