@@ -114,9 +114,9 @@ if __name__ == "__main__":
     ray.init(log_to_driver=False)
 
     buffer_size = 2000
-    epochs = 50
-    saving_path = os.getcwd() + "/smp_monolithic_results"
-    saving_after = 5
+    epochs = 150
+    saving_path = os.getcwd() + "/smp_monolithic_results3"
+    saving_after = 3
     sample_size = 15
     optim_batch_size = 8
     gamma = .99
@@ -124,6 +124,7 @@ if __name__ == "__main__":
     total_steps = 150
     update_interval = 4
     rho = .2
+    learning_rate = .001
 
     env_test_instance = gym.make('BipedalWalker-v3')
     model_kwargs = {
@@ -158,7 +159,7 @@ if __name__ == "__main__":
 
     agent = manager.get_agent()
 
-    optimizer = tf.keras.optimizers.Adam(learning_rate=.0001)
+    optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
 
     # fill buffer
     print("Filling buffer before training..")
