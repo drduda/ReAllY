@@ -353,6 +353,7 @@ if __name__ == "__main__":
         num_parallel=(os.cpu_count() - 1),
         total_steps=150,
         action_sampling_type="continuous_normal_diagonal",
+        is_tf=True,
         model_kwargs=model_kwargs
     )
 
@@ -364,7 +365,7 @@ if __name__ == "__main__":
         'not_done',
     ]
 
-    manager.initilize_buffer(buffer_size, optim_keys)
+    manager.initialize_buffer(buffer_size, optim_keys)
 
     manager.initialize_aggregator(
         path=saving_path, saving_after=saving_after, aggregator_keys=["loss", "reward"]
