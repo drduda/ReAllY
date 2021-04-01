@@ -9,13 +9,21 @@ test.py
 a2c.py
 ppo.py
 
+progress
+progress_deep_q
+progress_deep_q_lunar
+progress_deep_q_target
+progress_deep_q_target_cycle
+progress_tabq
+progress_a2c
 grid_q.py
+progress_test
 *.log
 
 
 
 # Byte-compiled / optimized / DLL files
-really/__pycache__*
+really/__pycache__
 __pycache__/
 *.py[cod]
 *$py.class
@@ -154,5 +162,6 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
-# jetbrains
-.idea
+*.iml
+*.xml
+*.idea
