@@ -6,7 +6,6 @@ import glob
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 import ray
 import tensorflow as tf
-import gridworlds
 import gym
 import numpy as np
 from really.agent import Agent
@@ -44,6 +43,8 @@ class SampleManager:
 
         remote_min_returns: int, minimum number of remote runner results to wait for, defaults to 10% of num_parallel
         remote_time_out: float, maximum amount of time (in seconds) to wait on the remote runner results, defaults to None
+
+        is_tf: boolean, if model is tensorflow model and neets initialization
     """
 
     def __init__(
@@ -66,41 +67,55 @@ class SampleManager:
                 kwargs.pop("env_kwargs")
             self.env_instance = self.env_creator(self.environment, **env_kwargs)
 
-
         # specify input shape if not given
         if not ("input_shape" in kwargs):
             state = self.env_instance.reset()
             state = np.expand_dims(state, axis=0)
-            kwargs["input_shape"] = state.shape
+            kwargs["input_shape"] = state
 
         # if no model_kwargs given set to empty
         if not ("model_kwargs") in kwargs:
             kwargs["model_kwargs"] = {}
+            if not ("is_tf") in kwargs:
+                kwargs["is_tf"] = True
+            else:
+                kwargs["is_tf"] = False
 
         # initilize random weights if not given
-        if not('weights' in kwargs.keys()):
-            random_weights = self.initialize_weights(self.model, kwargs['input_shape'], kwargs['model_kwargs'])
-            kwargs['weights'] = random_weights
+        if not ("weights" in kwargs.keys()):
+            random_weights = self.initialize_weights(
+                self.model,
+                kwargs["input_shape"],
+                kwargs["model_kwargs"],
+                kwargs["is_tf"],
+            )
+            kwargs["weights"] = random_weights
 
-        kwargs['test'] = False
+        kwargs["test"] = False
+        kwargs["discrete_env"] = True
+        self.discrete_env = True
         self.kwargs = kwargs
         ## some checkups
 
         assert self.num_parallel > 0, "num_parallel hast to be greater than 0!"
 
-        self.kwargs['discrete_env'] = True
+        self.kwargs["discrete_env"] = True
         # check action sampling type
         if "action_sampling_type" in kwargs.keys():
             type = kwargs["action_sampling_type"]
-            if type not in ["thompson", "epsilon_greedy", "discrete_policy", "continuous_normal_diagonal"]:
+            if type not in [
+                "thompson",
+                "epsilon_greedy",
+                "discrete_policy",
+                "continuous_normal_diagonal",
+            ]:
                 print(
                     f"unsupported sampling type: {type}. assuming sampling from a discrete policy instead."
                 )
                 self.kwargs["action_sampling_type"] = "discrete_policy"
-            if type == 'continuous_normal_diagonal':
+            if type == "continuous_normal_diagonal":
                 self.discrete_env = False
-                self.kwargs['discrete_env'] = False
-
+                self.kwargs["discrete_env"] = False
 
         if not ("temperature" in self.kwargs.keys()):
             self.kwargs["temperature"] = 1
@@ -112,7 +127,7 @@ class SampleManager:
                 print(f"unsuppoerted return key: {r}")
                 returns.pop(r)
             if r == "value_estimate":
-                    self.kwargs["value_estimate"] = True
+                self.kwargs["value_estimate"] = True
         self.returns = returns
 
         # check for runner sampling method:
@@ -161,18 +176,17 @@ class SampleManager:
         for r in self.returns:
             self.data[r] = []
 
-
-    def initialize_weights(self, model, input_shape, model_kwargs):
+    def initialize_weights(self, model, input_dummy, model_kwargs, is_tf):
         model_inst = model(**model_kwargs)
-        if not(input_shape):
-            return model_inst.get_weights()
-        if hasattr(model, "tensorflow"):
-            assert (
-                input_shape != None
-            ), 'You have a tensorflow model with no input shape specified for weight initialization. \n Specify input_shape in "model_kwargs" or specify as False if not needed'
-        dummy = np.zeros(input_shape)
-        model_inst(dummy)
-        weights = model_inst.get_weights()
+        if is_tf:
+            if hasattr(model, "tensorflow"):
+                assert (
+                    input_dummy != None
+                ), 'You have a tensorflow model with no input shape specified for weight initialization. \n Specify input_shape in "model_kwargs" or specify as False if not needed'
+            model_inst(input_dummy)
+            weights = model_inst.get_weights()
+        else:
+            weights = model_inst.get_weights()
 
         return weights
 
@@ -200,9 +214,13 @@ class SampleManager:
 
         # initial processes
         if self.run_episodes:
-            runner_processes = [b.run_n_episodes.remote(self.runner_steps) for b in runner_boxes]
+            runner_processes = [
+                b.run_n_episodes.remote(self.runner_steps) for b in runner_boxes
+            ]
         else:
-            runner_processes = [b.run_n_steps.remote(self.runner_steps) for b in runner_boxes]
+            runner_processes = [
+                b.run_n_steps.remote(self.runner_steps) for b in runner_boxes
+            ]
 
         # run as long as not yet reached number of total steps
         while not_done:
@@ -210,8 +228,8 @@ class SampleManager:
             ready, remaining = ray.wait(
                 runner_processes,
                 num_returns=self.remote_min_returns,
-                timeout=self.remote_time_out
-                )
+                timeout=self.remote_time_out,
+            )
             # boxes returns list of tuples (data_agg, index)
             returns = ray.get(ready)
             results = []
@@ -230,10 +248,14 @@ class SampleManager:
             done_runners = list(accesed_mapping)
             # create new processes
             if self.run_episodes:
-                new_processes = [b.run_n_episodes.remote(self.runner_steps) for b in done_runners]
+                new_processes = [
+                    b.run_n_episodes.remote(self.runner_steps) for b in done_runners
+                ]
 
             else:
-                new_processes = [b.run_n_steps.remote(self.runner_steps) for b in done_runners]
+                new_processes = [
+                    b.run_n_steps.remote(self.runner_steps) for b in done_runners
+                ]
 
             # concatenate old and new processes
             runner_processes = remaining + new_processes
@@ -275,7 +297,7 @@ class SampleManager:
     def get_agent(self, test=False):
 
         if test:
-            self.kwargs['test'] = True
+            self.kwargs["test"] = True
 
         # get agent specifications from runner box
         runner_box = RunnerBox.remote(
@@ -290,7 +312,7 @@ class SampleManager:
         agent = Agent(self.model, **agent_kwargs)
 
         if test:
-            self.kwargs['test'] = False
+            self.kwargs["test"] = False
 
         return agent
 
@@ -303,7 +325,7 @@ class SampleManager:
     def set_epsilon(self, epsilon):
         self.kwargs["epsilon"] = epsilon
 
-    def initilize_buffer(
+    def initialize_buffer(
         self, size, optim_keys=["state", "action", "reward", "state_new", "not_done"]
     ):
         self.buffer = Replay_buffer(size, optim_keys)
@@ -357,7 +379,7 @@ class SampleManager:
                 # check if action is tf
                 if tf.is_tensor(action):
                     action = action.numpy()
-                if self.kwargs['discrete_env']:
+                if self.kwargs["discrete_env"]:
                     action = int(action)
                 state_new, reward, done, info = env.step(action)
                 state_new = np.expand_dims(state_new, axis=0)
@@ -400,14 +422,21 @@ class SampleManager:
                 )
             return rewards
 
-    def initialize_aggregator(self, path, saving_after=10, aggregator_keys=["loss"], max_size=5, init_epoch=0):
-        self.agg = Smoothing_aggregator(path, saving_after, aggregator_keys, max_size, init_epoch)
+    def initialize_aggregator(
+        self, path, saving_after=10, aggregator_keys=["loss"], max_size=5, init_epoch=0
+    ):
+        self.agg = Smoothing_aggregator(
+            path, saving_after, aggregator_keys, max_size, init_epoch
+        )
 
     def update_aggregator(self, **kwargs):
         self.agg.update(**kwargs)
 
     def env_creator(self, object, **kwargs):
         return object(**kwargs)
+
+    def set_env(self, env_kwargs):
+        self.env_instance = self.env_creator(self.environment, **env_kwargs)
 
     def save_model(self, path, epoch, model_name="model"):
         time_stamp = datetime.now().strftime("%d-%m-%Y_%I-%M-%S_%p")
