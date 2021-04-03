@@ -25,8 +25,6 @@ def convert_mono_to_modular_state(mono_state):
 
     :param mono_state monolithic state from the gym environment
     """
-    batch_size = len(mono_state)
-
     hull_angle = mono_state[:, 0]
     hull_speed = mono_state[:, 1]
     vel_x = mono_state[:, 2]
@@ -56,35 +54,35 @@ def convert_mono_to_modular_state(mono_state):
         ground_contact_l,
         tf.zeros_like(knee_angle_l),
         tf.zeros_like(knee_angle_l)
-    ], axis=-1), [batch_size, 5])
+    ], axis=-1), [-1, 5])
     knee_state_r = tf.reshape(tf.concat([
         knee_angle_r,
         knee_speed_r,
         ground_contact_r,
         tf.zeros_like(knee_angle_r),
         tf.zeros_like(knee_angle_r)
-    ], axis=-1), [batch_size, 5])
+    ], axis=-1), [-1, 5])
     hip_state_l = tf.reshape(tf.concat([
         hip_angle_l,
         hip_speed_l,
         tf.zeros_like(hip_angle_l),
         tf.zeros_like(hip_angle_l),
         tf.zeros_like(hip_angle_l)
-    ], axis=-1), [batch_size, 5])
+    ], axis=-1), [-1, 5])
     hip_state_r = tf.reshape(tf.concat([
         hip_angle_r,
         hip_speed_r,
         tf.zeros_like(hip_angle_r),
         tf.zeros_like(hip_angle_r),
         tf.zeros_like(hip_angle_r)
-    ], axis=-1), [batch_size, 5])
+    ], axis=-1), [-1, 5])
     head_state = tf.reshape(tf.concat([
         hull_angle,
         hull_speed,
         tf.zeros_like(hull_angle),
         vel_x,
         vel_y
-    ], axis=-1), [batch_size, 5])
+    ], axis=-1), [-1, 5])
 
     return knee_state_l, knee_state_r, hip_state_l, hip_state_r, head_state
 
@@ -205,14 +203,12 @@ class SMPActor(tf.keras.layers.Layer):
         self.down_policy = DownPolicy(self.message_dimension, self.action_dimension, self.min_action, self.max_action)
 
     def call(self, inputs, training=None, mask=None):
-        batch_size = len(inputs)
-
         # discard lidar for now
         inputs = inputs[:, :-10]
         knee_state_l, knee_state_r, hip_state_l, hip_state_r, head_state = convert_mono_to_modular_state(inputs)
 
         # Upwards policy
-        up_messages_from_ground = tf.zeros((batch_size, self.message_dimension))
+        up_messages_from_ground = tf.zeros_like(inputs)[:, :self.message_dimension]
 
         # message_parent = policy_up(state, message_child)
         up_message_from_knee_l = self.up_policy(knee_state_l, up_messages_from_ground)
@@ -325,7 +321,7 @@ if __name__ == "__main__":
 
     ray.init(log_to_driver=False)
 
-    buffer_size = 200
+    buffer_size = 2
     epochs = 2
     saving_path = os.getcwd() + "/smp_results"
     saving_after = 5
