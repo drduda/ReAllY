@@ -132,7 +132,7 @@ class Policy(tf.keras.layers.Layer):
     def __init__(self, out_dim):
         # todo change architecture
         super(Policy, self).__init__()
-        self.d1 = Dense(out_dim, activation=LeakyReLU(), dtype=tf.float32)
+        self.d1 = Dense(32, activation=LeakyReLU(), dtype=tf.float32)
         self.d2 = Dense(out_dim, activation=None, dtype=tf.float32)
 
     def call(self, inputs, training=None, mask=None):
@@ -184,12 +184,12 @@ class DownPolicy(Policy):
 
 
 class SMPActor(tf.keras.layers.Layer):
-    def __init__(self, action_dimension, min_action, max_action):
+    def __init__(self, action_dimension, min_action, max_action, msg_dimension):
         super(SMPActor, self).__init__()
         self.action_dimension = action_dimension
         self.min_action = min_action
         self.max_action = max_action
-        self.message_dimension = 8
+        self.message_dimension = msg_dimension
         self.number_modules = 5
 
         self.knees_state_index = [0,1]
@@ -273,13 +273,15 @@ class TD3Critic(tf.keras.layers.Layer):
 
 
 class TD3Net(tf.keras.Model):
-    def __init__(self, action_dimension=2, min_action=-1, max_action=1, smp=True):
+    def __init__(self, action_dimension=2, min_action=-1, max_action=1, smp=True, msg_dimension=1):
         super(TD3Net, self).__init__()
         self.action_dimension = action_dimension
         self.min_action = min_action
         self.max_action = max_action
+        self.msg_dimension = msg_dimension
         if smp:
-            self.actor = SMPActor(self.action_dimension, self.min_action, self.max_action)
+            self.actor = SMPActor(self.action_dimension, self.min_action, self.max_action,
+                                  msg_dimension=self.msg_dimension)
         else:
             self.actor = TD3Actor(self.action_dimension, self.min_action, self.max_action)
 
@@ -321,17 +323,21 @@ if __name__ == "__main__":
 
     ray.init(log_to_driver=False)
 
-    buffer_size = 2
-    epochs = 2
-    saving_path = os.getcwd() + "/smp_results"
+    buffer_size = 2000 # 10e6 in their repo, not possible with our ram
+    epochs = 50
+    saving_path = os.getcwd() + "/smp_results_test"
     saving_after = 5
     sample_size = 15
     optim_batch_size = 8
-    gamma = .99
-    test_steps = 10
+    gamma = .98
+    test_steps = 100 # 1000 in their repo
     update_interval = 4
     policy_delay = 2
-    rho = .2
+    rho = .046
+    policy_noise = .2
+    policy_noise_clip = .5
+    msg_dim = 1 # 32 in their repo
+    learning_rate = .0005
 
     env_test_instance = gym.make('BipedalWalker-v3')
     model_kwargs = {
@@ -339,7 +345,8 @@ if __name__ == "__main__":
         'action_dimension': 1,
         'min_action': copy(env_test_instance.action_space.low)[0],
         'max_action': copy(env_test_instance.action_space.high)[0],
-        'smp': True
+        'smp': True,
+        'msg_dimension': msg_dim
     }
     del env_test_instance
 
@@ -369,7 +376,7 @@ if __name__ == "__main__":
 
     agent = manager.get_agent()
 
-    optimizer = tf.keras.optimizers.Adam(learning_rate=.0001)
+    optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
 
     # fill buffer
     print("Filling buffer before training..")
@@ -401,7 +408,11 @@ if __name__ == "__main__":
 
             action_new = target_agent.act(state_new)
             # add noise to action_new
-            action_new = action_new + tf.random.normal(action_new.shape, 0., 1.)
+            action_new = action_new + tf.clip_by_value(
+                tf.random.normal(action_new.shape, 0., policy_noise),
+                -policy_noise_clip,
+                policy_noise_clip
+            )
             # clip action_new to action space
             action_new = tf.clip_by_value(
                 action_new,
