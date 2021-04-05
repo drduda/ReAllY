@@ -98,36 +98,6 @@ def reparam_action(act_dist, action_dimension, min_action, max_action):
     return action_out
 
 
-class TD3Actor(tf.keras.layers.Layer):
-
-    def __init__(self, action_dimension=2, min_action=-1, max_action=1, hid_units=16):
-        super(TD3Actor, self).__init__()
-        self.action_dimension = action_dimension
-        self.min_action = min_action
-        self.max_action = max_action
-
-        self.d1 = Dense(hid_units, activation=LeakyReLU(), dtype=tf.float32)
-        self.d2 = Dense(hid_units, activation=LeakyReLU(), dtype=tf.float32)
-        self.dout = Dense(self.action_dimension*2, activation=None, dtype=tf.float32)
-
-    def call(self, inputs, training=None, mask=None):
-        output = {}
-
-        # pass through network
-        hidden = self.d1(inputs)
-        hidden = self.d2(hidden)
-        dout = self.dout(hidden)
-
-        # Clip mu to the possible actions spaces
-        output['mu'] = tf.clip_by_value(dout[:, self.action_dimension:], self.min_action, self.max_action)
-        output['sigma'] = tf.exp(dout[:, :self.action_dimension])
-
-        return output
-
-    def get_config(self):
-        return super().get_config()
-
-
 class Policy(tf.keras.layers.Layer):
     def __init__(self, out_dim):
         # todo change architecture
@@ -251,7 +221,6 @@ class SMPActor(tf.keras.layers.Layer):
         return action_out
 
 
-# todo why not module?
 class TD3Critic(tf.keras.layers.Layer):
 
     def __init__(self):
@@ -273,17 +242,14 @@ class TD3Critic(tf.keras.layers.Layer):
 
 
 class TD3Net(tf.keras.Model):
-    def __init__(self, action_dimension=2, min_action=-1, max_action=1, smp=True, msg_dimension=1):
+    def __init__(self, action_dimension=2, min_action=-1, max_action=1, msg_dimension=1):
         super(TD3Net, self).__init__()
         self.action_dimension = action_dimension
         self.min_action = min_action
         self.max_action = max_action
         self.msg_dimension = msg_dimension
-        if smp:
-            self.actor = SMPActor(self.action_dimension, self.min_action, self.max_action,
-                                  msg_dimension=self.msg_dimension)
-        else:
-            self.actor = TD3Actor(self.action_dimension, self.min_action, self.max_action)
+        self.actor = SMPActor(self.action_dimension, self.min_action, self.max_action,
+                              msg_dimension=self.msg_dimension)
 
         self.critic0 = TD3Critic()
         self.critic1 = TD3Critic()
@@ -295,9 +261,8 @@ class TD3Net(tf.keras.Model):
         output['mu'] = actor_out['mu']
         output['sigma'] = actor_out['sigma']
 
-        # reparameterization trick
-        action = output['mu'] + output['sigma'] * tf.random.normal([self.action_dimension], 0., 1., dtype=tf.float32)
-        action = tf.clip_by_value(action, self.min_action, self.max_action)
+        action = reparam_action(output, self.action_dimension, self.min_action, self.max_action)
+
         # input for q network
         state_action = tf.concat([state, action], axis=-1)
 
@@ -306,10 +271,7 @@ class TD3Net(tf.keras.Model):
             self.critic1(state_action)
         ], axis=-1)
 
-        if 'all_qs' in kwargs.keys() and kwargs['all_qs']:
-            output['q_values'] = q_values
-        else:
-            output['q_values'] = tf.squeeze(tf.reduce_min(q_values, axis=-1))
+        output['q_values'] = tf.squeeze(tf.reduce_min(q_values, axis=-1))
 
         return output
 
@@ -324,7 +286,7 @@ if __name__ == "__main__":
     ray.init(log_to_driver=False)
 
     buffer_size = 2000 # 10e6 in their repo, not possible with our ram
-    epochs = 50
+    epochs = 150
     saving_path = os.getcwd() + "/smp_results_test"
     saving_after = 5
     sample_size = 15
@@ -345,7 +307,6 @@ if __name__ == "__main__":
         'action_dimension': 1,
         'min_action': copy(env_test_instance.action_space.low)[0],
         'max_action': copy(env_test_instance.action_space.high)[0],
-        'smp': True,
         'msg_dimension': msg_dim
     }
     del env_test_instance
@@ -391,6 +352,7 @@ if __name__ == "__main__":
         sample_dict = manager.sample(sample_size, from_buffer=True)
         print(f"collected data for: {sample_dict.keys()}")
 
+        # cast values to float32 and create data dict
         sample_dict['state'] = tf.cast(sample_dict['state'], tf.float32)
         sample_dict['action'] = tf.cast(sample_dict['action'], tf.float32)
         sample_dict['reward'] = tf.cast(sample_dict['reward'], tf.float32)
@@ -420,6 +382,7 @@ if __name__ == "__main__":
                 manager.env_instance.action_space.high
             )
 
+            # calculate target with double-Q-learning
             state_action_new = tf.concat([state_new, action_new], axis=-1)
             q_values0 = target_agent.model.critic0(state_action_new)
             q_values1 = target_agent.model.critic1(state_action_new)
@@ -447,12 +410,12 @@ if __name__ == "__main__":
             gradients = tape.gradient(loss, agent.model.critic1.trainable_variables)
             optimizer.apply_gradients(zip(gradients, agent.model.critic1.trainable_variables))
 
-            # update actor
+            # update actor with delayed policy update
             if e % policy_delay == 0:
                 with tf.GradientTape() as tape:
                     actor_output = agent.model.actor(state)
-                    action = actor_output['mu'] + actor_output['sigma'] * tf.random.normal(actor_output['mu'].shape, 0., 1., dtype=tf.float32)
-                    action = tf.clip_by_value(action, agent.model.min_action, agent.model.max_action)
+                    action = reparam_action(actor_output, actor_output['mu'].shape,
+                                            agent.model.min_action, agent.model.max_action)
                     state_action = tf.concat([state, action], axis=-1)
                     q_val = agent.model.critic0(state_action)
                     actor_loss = - tf.reduce_mean(q_val)
