@@ -414,7 +414,7 @@ if __name__ == "__main__":
             if e % policy_delay == 0:
                 with tf.GradientTape() as tape:
                     actor_output = agent.model.actor(state)
-                    action = reparam_action(actor_output, actor_output['mu'].shape,
+                    action = reparam_action(actor_output, agent.model.action_dimension,
                                             agent.model.min_action, agent.model.max_action)
                     state_action = tf.concat([state, action], axis=-1)
                     q_val = agent.model.critic0(state_action)
