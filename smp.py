@@ -291,13 +291,13 @@ class TD3Net(tf.keras.Model):
 def parse(args):
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("--epochs", default=150)
-    parser.add_argument("--batch_size")
-    parser.add_argument("--policy_noise")
-    parser.add_argument("--msg_dim")
-    parser.add_argument("--learning_rate")
-    parser.add_argument("--hidden_units")
-    parser.add_argument("--gamma")
+    parser.add_argument("--epochs", default=150, type=int)
+    parser.add_argument("--batch_size", type=int)
+    parser.add_argument("--policy_noise", type=float)
+    parser.add_argument("--msg_dim", type=int)
+    parser.add_argument("--learning_rate", type=float)
+    parser.add_argument("--hidden_units", type=int)
+    parser.add_argument("--gamma", type=float)
 
     return parser.parse_args()
 
