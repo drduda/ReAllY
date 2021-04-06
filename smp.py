@@ -4,7 +4,8 @@ import os
 logging.disable(logging.WARNING)
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 import tensorflow as tf
-from tensorflow.keras.layers import Dense, LeakyReLU
+from tensorflow.keras.layers import Dense, LeakyReLU, LayerNormalization
+from tensorflow.keras.activations import tanh
 import numpy as np
 import gym
 from gym.envs.box2d import BipedalWalker
@@ -104,6 +105,7 @@ class Policy(tf.keras.layers.Layer):
         super(Policy, self).__init__()
         self.d1 = Dense(32, activation=LeakyReLU(), dtype=tf.float32)
         self.d2 = Dense(out_dim, activation=None, dtype=tf.float32)
+        self.normalize = LayerNormalization()
 
     def call(self, inputs, training=None, mask=None):
         hidden = self.d1(inputs)
@@ -119,16 +121,17 @@ class UpPolicy(Policy):
         if message_child_2 is None:
             message_child_2 = tf.zeros_like(message_child_1)
         inputs = tf.concat([state, message_child_1, message_child_2], axis=-1)
-        return super().call(inputs)
+        return self.normalize(super().call(inputs))
 
 
 class DownPolicy(Policy):
-    def __init__(self, message_dim, action_dim, min_action, max_action):
+    def __init__(self, message_dim, action_dim, min_action, max_action, fix_sigma=True):
         super(DownPolicy, self).__init__(action_dim * 2 + message_dim * 2)
         self.action_dim = action_dim
         self.message_dim = message_dim
         self.min_action = min_action
         self.max_action = max_action
+        self.fix_sigma = fix_sigma
 
     def __call__(self, message_up, message_down):
         inputs = tf.concat([message_up, message_down], axis=-1)
@@ -139,11 +142,13 @@ class DownPolicy(Policy):
         """
 
         action_mu = output[:, 2 * self.message_dim:-self.action_dim]
-        action_sigma = output[:, 2 * self.message_dim + self.action_dim:]
-        action_sigma = tf.exp(action_sigma)
+        if self.fix_sigma:
+            action_sigma = tanh(tf.ones_like(action_mu, dtype=tf.float32))
+        else:
+            action_sigma = tf.exp(tanh(output[:, 2 * self.message_dim + self.action_dim:]))
 
-        message_1 = output[:, :- self.message_dim - 2 * self.action_dim]
-        message_2 = output[:, self.message_dim:- 2 * self.action_dim]
+        message_1 = self.normalize(output[:, :- self.message_dim - 2 * self.action_dim])
+        message_2 = self.normalize(output[:, self.message_dim:- 2 * self.action_dim])
 
         action = {
             'mu': action_mu,
@@ -154,13 +159,14 @@ class DownPolicy(Policy):
 
 
 class SMPActor(tf.keras.layers.Layer):
-    def __init__(self, action_dimension, min_action, max_action, msg_dimension):
+    def __init__(self, action_dimension, min_action, max_action, msg_dimension, fix_sigma=True):
         super(SMPActor, self).__init__()
         self.action_dimension = action_dimension
         self.min_action = min_action
         self.max_action = max_action
         self.message_dimension = msg_dimension
         self.number_modules = 5
+        self.fix_sigma = fix_sigma
 
         self.knees_state_index = [0,1]
         self.hips_state_index = [2,3]
@@ -170,7 +176,8 @@ class SMPActor(tf.keras.layers.Layer):
         self.up_policy = UpPolicy(self.message_dimension)
 
         # Downwards policy: action, message1, message2 = policy_down(message_up, message,down)
-        self.down_policy = DownPolicy(self.message_dimension, self.action_dimension, self.min_action, self.max_action)
+        self.down_policy = DownPolicy(self.message_dimension, self.action_dimension, self.min_action, self.max_action,
+                                      fix_sigma=self.fix_sigma)
 
     def call(self, inputs, training=None, mask=None):
         # discard lidar for now
@@ -242,14 +249,16 @@ class TD3Critic(tf.keras.layers.Layer):
 
 
 class TD3Net(tf.keras.Model):
-    def __init__(self, action_dimension=2, min_action=-1, max_action=1, msg_dimension=1):
+    def __init__(self, action_dimension=2, min_action=-1, max_action=1, msg_dimension=1, fix_sigma=True):
         super(TD3Net, self).__init__()
         self.action_dimension = action_dimension
         self.min_action = min_action
         self.max_action = max_action
         self.msg_dimension = msg_dimension
+        self.fix_sigma = fix_sigma
+
         self.actor = SMPActor(self.action_dimension, self.min_action, self.max_action,
-                              msg_dimension=self.msg_dimension)
+                              msg_dimension=self.msg_dimension, fix_sigma=fix_sigma)
 
         self.critic0 = TD3Critic()
         self.critic1 = TD3Critic()
@@ -285,6 +294,7 @@ if __name__ == "__main__":
 
     ray.init(log_to_driver=False)
 
+    # hyper parameters
     buffer_size = 2000 # 10e6 in their repo, not possible with our ram
     epochs = 150
     saving_path = os.getcwd() + "/smp_results_test"
@@ -307,7 +317,8 @@ if __name__ == "__main__":
         'action_dimension': 1,
         'min_action': copy(env_test_instance.action_space.low)[0],
         'max_action': copy(env_test_instance.action_space.high)[0],
-        'msg_dimension': msg_dim
+        'msg_dimension': msg_dim,
+        'fix_sigma': True
     }
     del env_test_instance
 
