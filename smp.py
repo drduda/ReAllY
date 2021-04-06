@@ -300,6 +300,7 @@ def parse(args):
 def main(args):
 
     args = parse(args)
+    print(args)
 
     tf.keras.backend.set_floatx('float32')
 
