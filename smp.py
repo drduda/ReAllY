@@ -15,6 +15,7 @@ from really.utils import (
     dict_to_dict_of_datasets,
 )
 from copy import copy
+import argparse
 
 
 def convert_mono_to_modular_state(mono_state):
@@ -100,11 +101,11 @@ def reparam_action(act_dist, action_dimension, min_action, max_action):
 
 
 class MLPBase(tf.keras.layers.Layer):
-    def __init__(self, out_dim):
-        # todo change architecture
+    def __init__(self, out_dim, hidden_units):
         super(MLPBase, self).__init__()
-        self.d1 = Dense(32, activation=LeakyReLU(), dtype=tf.float32)
-        self.d2 = Dense(out_dim, activation=None, dtype=tf.float32)
+        self.d1 = Dense(hidden_units, activation=LeakyReLU(), dtype=tf.float32)
+        self.d2 = Dense(hidden_units, activation=LeakyReLU(), dtype=tf.float32)
+        self.d3 = Dense(out_dim, activation=None, dtype=tf.float32)
         self.normalize = LayerNormalization()
 
     def call(self, inputs, training=None, mask=None):
@@ -114,8 +115,8 @@ class MLPBase(tf.keras.layers.Layer):
 
 class UpPolicy(MLPBase):
     # Upwards policy: message_up =policy_up(state, message_child)
-    def __init__(self, message_dim):
-        super(UpPolicy, self).__init__(message_dim)
+    def __init__(self, message_dim, hidden_units):
+        super(UpPolicy, self).__init__(message_dim, hidden_units)
 
     def __call__(self, state, message_child_1, message_child_2=None):
         if message_child_2 is None:
@@ -125,16 +126,16 @@ class UpPolicy(MLPBase):
 
 
 class DownPolicy(MLPBase):
-    def __init__(self, message_dim, action_dim, min_action, max_action, fix_sigma=True):
-        super(DownPolicy, self).__init__(action_dim * 2 + message_dim * 2)
+    def __init__(self, message_dim, action_dim, min_action, max_action, hidden_units, fix_sigma=True):
+        super(DownPolicy, self).__init__(action_dim * 2 + message_dim * 2, hidden_units)
         self.action_dim = action_dim
         self.message_dim = message_dim
         self.min_action = min_action
         self.max_action = max_action
         self.fix_sigma = fix_sigma
 
-        self.action_net = MLPBase(action_dim * 2)
-        self.message_net = MLPBase(message_dim * 2)
+        self.action_net = MLPBase(action_dim * 2, hidden_units)
+        self.message_net = MLPBase(message_dim * 2, hidden_units)
 
     def __call__(self, message_up, message_down):
         inputs = tf.concat([message_up, message_down], axis=-1)
@@ -159,7 +160,7 @@ class DownPolicy(MLPBase):
 
 
 class SMPActor(tf.keras.layers.Layer):
-    def __init__(self, action_dimension, min_action, max_action, msg_dimension, fix_sigma=True):
+    def __init__(self, action_dimension, min_action, max_action, hidden_units, msg_dimension, fix_sigma=True):
         super(SMPActor, self).__init__()
         self.action_dimension = action_dimension
         self.min_action = min_action
@@ -168,16 +169,12 @@ class SMPActor(tf.keras.layers.Layer):
         self.number_modules = 5
         self.fix_sigma = fix_sigma
 
-        self.knees_state_index = [0,1]
-        self.hips_state_index = [2,3]
-        self.head_state_index = 4
-
         # Upwards policy: message =policy_up(state, message1, message2)
-        self.up_policy = UpPolicy(self.message_dimension)
+        self.up_policy = UpPolicy(self.message_dimension, hidden_units)
 
         # Downwards policy: action, message1, message2 = policy_down(message_up, message,down)
-        self.down_policy = DownPolicy(self.message_dimension, self.action_dimension, self.min_action, self.max_action,
-                                      self.fix_sigma)
+        self.down_policy = DownPolicy(self.message_dimension, self.action_dimension, self.min_action, self.max_action, hidden_units,
+                                      fix_sigma=self.fix_sigma)
 
     def call(self, inputs, training=None, mask=None):
         # discard lidar for now
@@ -253,15 +250,15 @@ class TD3Critic(tf.keras.layers.Layer):
 
 
 class TD3Net(tf.keras.Model):
-    def __init__(self, action_dimension=2, min_action=-1, max_action=1, msg_dimension=1, fix_sigma=True):
+    def __init__(self, action_dimension=2, min_action=-1, max_action=1, msg_dimension=1, hidden_units=128, fix_sigma=True):
         super(TD3Net, self).__init__()
         self.action_dimension = action_dimension
         self.min_action = min_action
         self.max_action = max_action
         self.msg_dimension = msg_dimension
         self.fix_sigma = fix_sigma
-
-        self.actor = SMPActor(self.action_dimension, self.min_action, self.max_action,
+        print(msg_dimension)
+        self.actor = SMPActor(self.action_dimension, self.min_action, self.max_action, hidden_units,
                               msg_dimension=self.msg_dimension, fix_sigma=fix_sigma)
 
         self.critic0 = TD3Critic()
@@ -291,8 +288,23 @@ class TD3Net(tf.keras.Model):
     def get_config(self):
         return super(TD3Net, self).get_config()
 
+def parse(args):
+    parser = argparse.ArgumentParser()
 
-if __name__ == "__main__":
+    parser.add_argument("--epochs", default=150)
+    parser.add_argument("--batch_size")
+    parser.add_argument("--policy_noise")
+    parser.add_argument("--msg_dim")
+    parser.add_argument("--learning_rate")
+    parser.add_argument("--hidden_units")
+    parser.add_argument("--gamma")
+
+    return parser.parse_args()
+
+def main(args):
+
+    args = parse(args)
+    print(args)
 
     tf.keras.backend.set_floatx('float32')
 
@@ -300,20 +312,20 @@ if __name__ == "__main__":
 
     # hyper parameters
     buffer_size = 2 # 10e6 in their repo, not possible with our ram
-    epochs = 150
+    epochs = args.epochs
     saving_path = os.getcwd() + "/smp_results_test"
     saving_after = 5
     sample_size = 2
-    optim_batch_size = 8
-    gamma = .98
+    optim_batch_size = args.batch_size
+    gamma = args.gamma
     test_steps = 100 # 1000 in their repo
     update_interval = 4
     policy_delay = 2
     rho = .046
-    policy_noise = .2
+    policy_noise = args.policy_noise
     policy_noise_clip = .5
-    msg_dim = 32 # 32 in their repo
-    learning_rate = .0005
+    msg_dim = arg.msg_dim # 32 in their repo
+    learning_rate = args.learning_rate
 
     env_test_instance = gym.make('BipedalWalker-v3')
     model_kwargs = {
@@ -322,7 +334,8 @@ if __name__ == "__main__":
         'min_action': copy(env_test_instance.action_space.low)[0],
         'max_action': copy(env_test_instance.action_space.high)[0],
         'msg_dimension': msg_dim,
-        'fix_sigma': True
+        'fix_sigma': True,
+        'hidden_units': args.hidden_units
     }
     del env_test_instance
 
@@ -462,3 +475,8 @@ if __name__ == "__main__":
     print("done")
     print("testing optimized agent")
     manager.test(test_steps, test_episodes=10, render=True)
+
+
+if __name__ == "__main__":
+    import sys
+    main(sys.argv[1:])
