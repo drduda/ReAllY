@@ -99,10 +99,10 @@ def reparam_action(act_dist, action_dimension, min_action, max_action):
     return action_out
 
 
-class Policy(tf.keras.layers.Layer):
+class MLPBase(tf.keras.layers.Layer):
     def __init__(self, out_dim):
         # todo change architecture
-        super(Policy, self).__init__()
+        super(MLPBase, self).__init__()
         self.d1 = Dense(32, activation=LeakyReLU(), dtype=tf.float32)
         self.d2 = Dense(out_dim, activation=None, dtype=tf.float32)
         self.normalize = LayerNormalization()
@@ -112,7 +112,7 @@ class Policy(tf.keras.layers.Layer):
         return self.d2(hidden)
 
 
-class UpPolicy(Policy):
+class UpPolicy(MLPBase):
     # Upwards policy: message_up =policy_up(state, message_child)
     def __init__(self, message_dim):
         super(UpPolicy, self).__init__(message_dim)
@@ -124,7 +124,7 @@ class UpPolicy(Policy):
         return self.normalize(super().call(inputs))
 
 
-class DownPolicy(Policy):
+class DownPolicy(MLPBase):
     def __init__(self, message_dim, action_dim, min_action, max_action, fix_sigma=True):
         super(DownPolicy, self).__init__(action_dim * 2 + message_dim * 2)
         self.action_dim = action_dim
@@ -133,22 +133,22 @@ class DownPolicy(Policy):
         self.max_action = max_action
         self.fix_sigma = fix_sigma
 
+        self.action_net = MLPBase(action_dim * 2)
+        self.message_net = MLPBase(message_dim * 2)
+
     def __call__(self, message_up, message_down):
         inputs = tf.concat([message_up, message_down], axis=-1)
-        output = super().call(inputs)
+        action_out = self.action_net(inputs)
+        message_out = self.message_net(inputs)
 
-        """
-        output structure: [message_1|message_2|action_mu|action_sigma]
-        """
-
-        action_mu = output[:, 2 * self.message_dim:-self.action_dim]
+        action_mu = action_out[:, :self.action_dim]
         if self.fix_sigma:
             action_sigma = tanh(tf.ones_like(action_mu, dtype=tf.float32))
         else:
-            action_sigma = tf.exp(tanh(output[:, 2 * self.message_dim + self.action_dim:]))
+            action_sigma = tf.exp(tanh(action_out[:, self.action_dim:]))
 
-        message_1 = self.normalize(output[:, :- self.message_dim - 2 * self.action_dim])
-        message_2 = self.normalize(output[:, self.message_dim:- 2 * self.action_dim])
+        message_1 = self.normalize(message_out[:, :- self.message_dim])
+        message_2 = self.normalize(message_out[:, self.message_dim:])
 
         action = {
             'mu': action_mu,
@@ -295,11 +295,11 @@ if __name__ == "__main__":
     ray.init(log_to_driver=False)
 
     # hyper parameters
-    buffer_size = 2000 # 10e6 in their repo, not possible with our ram
+    buffer_size = 2 # 10e6 in their repo, not possible with our ram
     epochs = 150
     saving_path = os.getcwd() + "/smp_results_test"
     saving_after = 5
-    sample_size = 15
+    sample_size = 2
     optim_batch_size = 8
     gamma = .98
     test_steps = 100 # 1000 in their repo
