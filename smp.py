@@ -177,7 +177,7 @@ class SMPActor(tf.keras.layers.Layer):
 
         # Downwards policy: action, message1, message2 = policy_down(message_up, message,down)
         self.down_policy = DownPolicy(self.message_dimension, self.action_dimension, self.min_action, self.max_action,
-                                      fix_sigma=self.fix_sigma)
+                                      self.fix_sigma)
 
     def call(self, inputs, training=None, mask=None):
         # discard lidar for now
@@ -185,7 +185,11 @@ class SMPActor(tf.keras.layers.Layer):
         knee_state_l, knee_state_r, hip_state_l, hip_state_r, head_state = convert_mono_to_modular_state(inputs)
 
         # Upwards policy
-        up_messages_from_ground = tf.zeros_like(inputs)[:, :self.message_dimension]
+        # ugly hack to get the dimensions right
+        up_messages_from_ground = tf.zeros_like(inputs)
+        while up_messages_from_ground.shape[-1] < self.message_dimension:
+            up_messages_from_ground = tf.concat([up_messages_from_ground, tf.zeros_like(inputs)], axis=-1)
+        up_messages_from_ground = up_messages_from_ground[:, :self.message_dimension]
 
         # message_parent = policy_up(state, message_child)
         up_message_from_knee_l = self.up_policy(knee_state_l, up_messages_from_ground)
@@ -308,7 +312,7 @@ if __name__ == "__main__":
     rho = .046
     policy_noise = .2
     policy_noise_clip = .5
-    msg_dim = 1 # 32 in their repo
+    msg_dim = 32 # 32 in their repo
     learning_rate = .0005
 
     env_test_instance = gym.make('BipedalWalker-v3')
