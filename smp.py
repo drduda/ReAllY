@@ -324,7 +324,7 @@ def main(args):
     rho = .046
     policy_noise = args.policy_noise
     policy_noise_clip = .5
-    msg_dim = arg.msg_dim # 32 in their repo
+    msg_dim = args.msg_dim # 32 in their repo
     learning_rate = args.learning_rate
 
     env_test_instance = gym.make('BipedalWalker-v3')
