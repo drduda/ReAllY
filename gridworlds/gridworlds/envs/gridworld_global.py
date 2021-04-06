@@ -11,8 +11,7 @@ import cv2
  There is one block position where the agent cannot move to.
  There is one reward position where the agent gets a reward and is done.
  For each other move the agent gets a reward of 0.
- The observation of the agent for each time step is a window of size (w,w) and an
- integer indicating the viewing direction of the agent.
+ The observation of the agent for each time step is the picture of the current world state including its own position.
 
 """
 
@@ -29,7 +28,7 @@ class GridWorld_Global(gym.Env):
             "reward_position": (2, 3),
             "start_position": (0, 0),
             "reward": 10,
-            "step_penalty" : -0.5,
+            "step_penalty": -0.5,
             "max_time_steps": 100,
             "player_color": [0, 0, 1],
             "reward_color": [1, 0, 0],
@@ -62,8 +61,8 @@ class GridWorld_Global(gym.Env):
         self.n_states = self.height * self.width
         self.action_space = spaces.Discrete(4)
         self.observation_space = spaces.Discrete(self.n_states)
-        self.final_reward = self.config['reward']
-        self.step_penalty = self.config['step_penalty']
+        self.final_reward = self.config["reward"]
+        self.step_penalty = self.config["step_penalty"]
 
         # grid info for rendering
         self.reward_position = self.config["reward_position"]
@@ -79,7 +78,6 @@ class GridWorld_Global(gym.Env):
 
         # for some reason gym wants that
         self._seed = random.seed(1234)
-
 
     def step(self, action):
 
@@ -121,7 +119,6 @@ class GridWorld_Global(gym.Env):
 
         return (x, y)
 
-
     def reset(self):
         self.position = self.start_position
         self.done = False
@@ -130,11 +127,11 @@ class GridWorld_Global(gym.Env):
         screen[self.position] = self.config["player_color"]
         return screen
 
-    def render(self, mode="human", close=False, size_wh=(500,900), show_view=False):
+    def render(self, mode="human", close=False, size_wh=(500, 900), show_view=False):
         screen = self.basic_screen.copy()
         screen[self.position] = self.config["player_color"]
         cv2.imshow("GridWorld environment", screen)
         cv2.waitKey(100)
         if close:
-            print('closing')
+            print("closing")
             cv2.destroyAllWindows()
