@@ -1,10 +1,8 @@
 ## NEST
 
-This is a simple utility to run a hyperparameter grid search for EGG-based games. We support two modes:
-* Local search (via `nest_local.py`): runs multiple jobs on a single machine, leveraging all available CUDA devices (if any);
-* Preemptable cluster-based (via `nest.py`).
- 
-The modes have similar behaviour, however, the latter is only implemented for the FAIR environment and uses internal libraries.
+This is a simple utility to run a hyperparameter grid search.
+* `nest_local.py`: runs multiple jobs on a single machine, leveraging all available CUDA devices (if any);
+
 
 # How to use
 
@@ -16,7 +14,7 @@ through. The syntax is simple:
 "hyperparameter_name_2": [1, 2, 3],
 }
 ```
-You can find an example in [example.json](../egg/nest/example.json).
+You can find an example in [example.json](./nest/example.json).
 
 Next, the module that implements the game should have a function `main(params)` which accepts command-line parameters and 
 runs the game logic. Hence, the typical implementation should follow this pattern:
@@ -24,23 +22,24 @@ runs the game logic. Hence, the typical implementation should follow this patter
 ```python
 ...
 def main(params):
-    egg.core.init(params=params)
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--hyperparameter_name_1")
+    args = parser.parse_args()
     ...
     
 if __name__ == '__main__':
     import sys
     main(sys.argv[1:])
 ```
-An example game that meets this requirement is [mnist_autoenc](./../egg/zoo/mnist_autoenc/train.py).
 
 
-# Local mode
-For local search mode, we assume that (a) the game requires only a single GPU, (b) it does not assign GPU devices 
+We assume that (a) the game requires only a single GPU, (b) it does not assign GPU devices 
 directly.
 
-After the json specification is set, we can run the search as follows:
+After the json specification is set, we can run the search as follows (make sure to use python 3 is default):
 ```bash
-python -m egg.nest.nest_local --game egg.zoo.mnist_autoenc.train --sweep egg/nest/example.json --n_workers=1
+python -m nest.nest_local --game smp --sweep nest/example.json --n_workers=1 --name blabla
 ```
 
 This command will spawn `n_workers` processes, playing the `egg.zoo.mnist_autoenc.train` game over a grid of hyperparameters

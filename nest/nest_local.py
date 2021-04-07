@@ -9,8 +9,8 @@ import pathlib
 import time
 from concurrent.futures import ProcessPoolExecutor, wait
 
-from nest.common import sweep
-from nest.wrappers import ConcurrentWrapper
+from common import sweep
+from wrappers import ConcurrentWrapper
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
