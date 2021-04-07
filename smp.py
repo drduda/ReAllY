@@ -305,7 +305,6 @@ def parse(args):
 
 def main(args):
 
-    args = parse(args)
     print(args)
 
     tf.keras.backend.set_floatx('float32')
@@ -481,4 +480,5 @@ def main(args):
 
 if __name__ == "__main__":
     import sys
-    main(sys.argv[1:])
+    args = parse(sys.argv[1:])
+    main(args)
