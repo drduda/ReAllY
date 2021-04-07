@@ -312,11 +312,11 @@ def main(args):
     ray.init(log_to_driver=False)
 
     # hyper parameters
-    buffer_size = 2000 # 10e6 in their repo, not possible with our ram
+    buffer_size = 10000 # 10e6 in their repo, not possible with our ram
     epochs = args.epochs
     saving_path = os.getcwd() + "/smp_results_test"
     saving_after = 5
-    sample_size = 2
+    sample_size = 256
     optim_batch_size = args.batch_size
     gamma = args.gamma
     test_steps = 100 # 1000 in their repo
