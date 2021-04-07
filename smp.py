@@ -110,7 +110,8 @@ class MLPBase(tf.keras.layers.Layer):
 
     def call(self, inputs, training=None, mask=None):
         hidden = self.d1(inputs)
-        return self.d2(hidden)
+        hidden = self.d2(hidden)
+        return self.d3(hidden)
 
 
 class UpPolicy(MLPBase):
@@ -257,7 +258,6 @@ class TD3Net(tf.keras.Model):
         self.max_action = max_action
         self.msg_dimension = msg_dimension
         self.fix_sigma = fix_sigma
-        print(msg_dimension)
         self.actor = SMPActor(self.action_dimension, self.min_action, self.max_action, hidden_units,
                               msg_dimension=self.msg_dimension, fix_sigma=fix_sigma)
 
@@ -311,7 +311,7 @@ def main(args):
     ray.init(log_to_driver=False)
 
     # hyper parameters
-    buffer_size = 2 # 10e6 in their repo, not possible with our ram
+    buffer_size = 2000 # 10e6 in their repo, not possible with our ram
     epochs = args.epochs
     saving_path = os.getcwd() + "/smp_results_test"
     saving_after = 5
