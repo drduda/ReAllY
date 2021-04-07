@@ -288,6 +288,7 @@ class TD3Net(tf.keras.Model):
     def get_config(self):
         return super(TD3Net, self).get_config()
 
+
 def parse(args):
     parser = argparse.ArgumentParser()
 
@@ -300,6 +301,7 @@ def parse(args):
     parser.add_argument("--gamma", type=float)
 
     return parser.parse_args()
+
 
 def main(args):
 
