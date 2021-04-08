@@ -45,3 +45,5 @@ for epochs in EPOCHS:
                                 with redirect_stdout(f):
                                     main(args)
 
+                            id += 1
+

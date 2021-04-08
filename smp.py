@@ -477,6 +477,8 @@ def main(args):
     print("testing optimized agent")
     manager.test(test_steps, test_episodes=10, render=True)
 
+    ray.shutdown()
+
 
 if __name__ == "__main__":
     import sys
