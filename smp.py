@@ -16,6 +16,7 @@ from really.utils import (
 )
 from copy import copy
 import argparse
+import time
 
 
 def convert_mono_to_modular_state(mono_state):
@@ -375,6 +376,10 @@ def main(args):
         data = manager.get_data()
         manager.store_in_buffer(data)
 
+    # track time while training
+    timer = time.time()
+    last_t = timer
+
     target_agent = manager.get_agent()
     for e in range(epochs):
         # off policy
@@ -471,6 +476,14 @@ def main(args):
 
         if e % saving_after == 0:
             manager.save_model(saving_path, e)
+
+        # needed time and remaining time estimation
+        current_t = time.time()
+        time_needed = current_t - last_t
+        time_remaining = (current_t - timer) / 60 / (e + 1) * (epochs - (e + 1))
+        print('Finished epoch %d of %d. Needed %1.f min for this epoch. Estimated time remaining: %.1f min'
+              % (e + 1, epochs, time_needed, time_remaining))
+        last_t = current_t
 
     manager.load_model(saving_path)
     print("done")
