@@ -479,7 +479,7 @@ def main(args):
 
         # needed time and remaining time estimation
         current_t = time.time()
-        time_needed = current_t - last_t
+        time_needed = (current_t - last_t) / 60
         time_remaining = (current_t - timer) / 60 / (e + 1) * (epochs - (e + 1))
         print('Finished epoch %d of %d. Needed %1.f min for this epoch. Estimated time remaining: %.1f min'
               % (e + 1, epochs, time_needed, time_remaining))
