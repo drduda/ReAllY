@@ -315,7 +315,7 @@ def main(args):
     # hyper parameters
     buffer_size = 10000 # 10e6 in their repo, not possible with our ram
     epochs = args.epochs
-    saving_path = os.getcwd() + "/smp_results_test"
+    saving_path = os.getcwd() + "/smp_results_config8"
     saving_after = 5
     sample_size = 256
     optim_batch_size = args.batch_size
@@ -464,8 +464,8 @@ def main(args):
 
             if e % policy_delay == 0:
                 # Polyak averaging
-                new_weights = [rho * target_agent.get_weights()[i] + (1 - rho) * manager.get_agent().get_weights()[i]
-                               for i in range(len(agent.get_weights()))]
+                new_weights = list(rho * np.array(target_agent.get_weights())
+                                   + (1. - rho) * np.array(agent.get_weights()))
                 target_agent.set_weights(new_weights)
 
         reward = manager.test(test_steps, evaluation_measure="reward")
