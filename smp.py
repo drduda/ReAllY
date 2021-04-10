@@ -313,9 +313,9 @@ def main(args):
     ray.init(log_to_driver=False)
 
     # hyper parameters
-    buffer_size = 10000 # 10e6 in their repo, not possible with our ram
+    buffer_size = 100000 # 10e6 in their repo, not possible with our ram
     epochs = args.epochs
-    saving_path = os.getcwd() + "/smp_results_config8"
+    saving_path = os.getcwd() + "/smp_results_config8_bigger_buffer"
     saving_after = 5
     sample_size = 256
     optim_batch_size = args.batch_size
@@ -479,8 +479,8 @@ def main(args):
 
         # needed time and remaining time estimation
         current_t = time.time()
-        time_needed = (current_t - last_t) / 60
-        time_remaining = (current_t - timer) / 60 / (e + 1) * (epochs - (e + 1))
+        time_needed = (current_t - last_t) / 60.
+        time_remaining = (current_t - timer) / 60. / (e + 1) * (epochs - (e + 1))
         print('Finished epoch %d of %d. Needed %1.f min for this epoch. Estimated time remaining: %.1f min'
               % (e + 1, epochs, time_needed, time_remaining))
         last_t = current_t
