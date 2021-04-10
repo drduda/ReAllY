@@ -28,20 +28,21 @@ def convert_mono_to_modular_state(mono_state):
 
     :param mono_state monolithic state from the gym environment
     """
-    hull_angle = mono_state[:, 0]
-    hull_speed = mono_state[:, 1]
-    vel_x = mono_state[:, 2]
-    vel_y = mono_state[:, 3]
-    hip_angle_l = mono_state[:, 4]
-    hip_speed_l = mono_state[:, 5]
-    knee_angle_l = mono_state[:, 6]
-    knee_speed_l = mono_state[:, 7]
-    ground_contact_l = mono_state[:, 8]
-    hip_angle_r = mono_state[:, 9]
-    hip_speed_r = mono_state[:, 10]
-    knee_angle_r = mono_state[:, 11]
-    knee_speed_r = mono_state[:, 12]
-    ground_contact_r = mono_state[:, 13]
+    hull_angle = tf.reshape(mono_state[:, 0], [-1, 1])
+    hull_speed = tf.reshape(mono_state[:, 1], [-1, 1])
+    vel_x = tf.reshape(mono_state[:, 2], [-1, 1])
+    vel_y = tf.reshape(mono_state[:, 3], [-1, 1])
+    hip_angle_l = tf.reshape(mono_state[:, 4], [-1, 1])
+    hip_speed_l = tf.reshape(mono_state[:, 5], [-1, 1])
+    knee_angle_l = tf.reshape(mono_state[:, 6], [-1, 1])
+    knee_speed_l = tf.reshape(mono_state[:, 7], [-1, 1])
+    ground_contact_l = tf.reshape(mono_state[:, 8], [-1, 1])
+    hip_angle_r = tf.reshape(mono_state[:, 9], [-1, 1])
+    hip_speed_r = tf.reshape(mono_state[:, 10], [-1, 1])
+    knee_angle_r = tf.reshape(mono_state[:, 11], [-1, 1])
+    knee_speed_r = tf.reshape(mono_state[:, 12], [-1, 1])
+    ground_contact_r = tf.reshape(mono_state[:, 13], [-1, 1])
+    lidar = mono_state[:, 13:]
 
     """
     Joint state:
@@ -51,41 +52,46 @@ def convert_mono_to_modular_state(mono_state):
         head velocity x
         head velocity y
     """
-    knee_state_l = tf.reshape(tf.concat([
+    knee_state_l = tf.concat([
         knee_angle_l,
         knee_speed_l,
         ground_contact_l,
         tf.zeros_like(knee_angle_l),
-        tf.zeros_like(knee_angle_l)
-    ], axis=-1), [-1, 5])
-    knee_state_r = tf.reshape(tf.concat([
+        tf.zeros_like(knee_angle_l),
+        tf.zeros_like(lidar)
+    ], axis=-1)
+    knee_state_r = tf.concat([
         knee_angle_r,
         knee_speed_r,
         ground_contact_r,
         tf.zeros_like(knee_angle_r),
-        tf.zeros_like(knee_angle_r)
-    ], axis=-1), [-1, 5])
-    hip_state_l = tf.reshape(tf.concat([
+        tf.zeros_like(knee_angle_r),
+        tf.zeros_like(lidar)
+    ], axis=-1)
+    hip_state_l = tf.concat([
         hip_angle_l,
         hip_speed_l,
         tf.zeros_like(hip_angle_l),
         tf.zeros_like(hip_angle_l),
-        tf.zeros_like(hip_angle_l)
-    ], axis=-1), [-1, 5])
-    hip_state_r = tf.reshape(tf.concat([
+        tf.zeros_like(hip_angle_l),
+        tf.zeros_like(lidar)
+    ], axis=-1)
+    hip_state_r = tf.concat([
         hip_angle_r,
         hip_speed_r,
         tf.zeros_like(hip_angle_r),
         tf.zeros_like(hip_angle_r),
-        tf.zeros_like(hip_angle_r)
-    ], axis=-1), [-1, 5])
-    head_state = tf.reshape(tf.concat([
+        tf.zeros_like(hip_angle_r),
+        tf.zeros_like(lidar)
+    ], axis=-1)
+    head_state = tf.concat([
         hull_angle,
         hull_speed,
         tf.zeros_like(hull_angle),
         vel_x,
-        vel_y
-    ], axis=-1), [-1, 5])
+        vel_y,
+        lidar
+    ], axis=-1)
 
     return knee_state_l, knee_state_r, hip_state_l, hip_state_r, head_state
 
@@ -179,8 +185,6 @@ class SMPActor(tf.keras.layers.Layer):
                                       fix_sigma=self.fix_sigma)
 
     def call(self, inputs, training=None, mask=None):
-        # discard lidar for now
-        inputs = inputs[:, :-10]
         knee_state_l, knee_state_r, hip_state_l, hip_state_r, head_state = convert_mono_to_modular_state(inputs)
 
         # Upwards policy
@@ -315,7 +319,7 @@ def main(args):
     # hyper parameters
     buffer_size = 100000 # 10e6 in their repo, not possible with our ram
     epochs = args.epochs
-    saving_path = os.getcwd() + "/smp_results_config8_bigger_buffer"
+    saving_path = os.getcwd() + "/smp_results_config8_withlidar"
     saving_after = 5
     sample_size = 256
     optim_batch_size = args.batch_size
