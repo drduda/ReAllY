@@ -2,20 +2,41 @@ from really import SampleManager
 from copy import copy
 import os
 import gym
-from smp import TD3Net
 import ray
+import sys
+import argparse
 
-if __name__ == "__main__":
-    hidden_units = 64
-    msg_dim = 16
-    model_path = os.getcwd() + "/smp_results_config8_withlidar"
+
+def parse(args):
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("--msg_dim", default=1, type=int)
+    parser.add_argument("--hidden_units", default=128, type=int)
+    parser.add_argument("--model_dir", type=str)
+    parser.add_argument("--baseline", default=False, type=bool)
+
+    return parser.parse_args()
+
+
+def main(args):
+    hidden_units = args.hidden_units
+    msg_dim = args.msg_dim
+    model_path = os.getcwd() + "/" + args.model_dir
 
     ray.init(log_to_driver=False)
 
     env_test_instance = gym.make('BipedalWalker-v3')
+
+    if args.baseline:
+        from baseline import TD3Net
+        action_dimension = copy(env_test_instance.action_space.shape)
+    else:
+        from smp import TD3Net
+        action_dimension = 1
+
     model_kwargs = {
         # action dimension for modular actions
-        'action_dimension': 1,
+        'action_dimension': action_dimension,
         'min_action': copy(env_test_instance.action_space.low)[0],
         'max_action': copy(env_test_instance.action_space.high)[0],
         'msg_dimension': msg_dim,
@@ -38,3 +59,8 @@ if __name__ == "__main__":
     manager.test(200, test_episodes=5, render=True)
 
     ray.shutdown()
+
+
+if __name__ == "__main__":
+    args = parse(sys.argv[1:])
+    main(args)
