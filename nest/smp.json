@@ -1,9 +1,0 @@
-{
-  "epochs": [40],
-  "batch_size": [32],
-  "policy_noise": [0.13, 0.9],
-  "msg_dim": [16, 32],
-  "learning_rate": [4e-4, 4e-3],
-  "hidden_units" : [100, 300],
-  "gamma" : [0.98, 0.99]
-}

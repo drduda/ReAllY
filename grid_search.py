@@ -3,20 +3,21 @@ import argparse
 import os
 
 # Module to test grid search
-from smp import main
+from smp.smp import TD3Net
+from smp.smp_utils import train_td3, parse
 
 PATH = './grid_search/'
 if not os.path.isdir(PATH):
     os.mkdir(PATH)
 
 # Hyperparams
-EPOCHS = [10]
-BATCH_SIZE = [32]
-POLICY_NOISE = [0.13, 0.5]
-MSG_DIM = [16, 32]
-LEARNING_RATE = [4e-4, 4e-3]
-HIDDEN_UNITS = [64]
-GAMMA = [0.98, 0.99]
+EPOCHS = [150, 150, 150, 150, 150, 150]
+BATCH_SIZE = [32, 64, 100]
+POLICY_NOISE = [0.2]
+MSG_DIM = [32]
+LEARNING_RATE = [4e-4]
+HIDDEN_UNITS = [128]
+GAMMA = [0.99]
 
 id = 0
 
@@ -29,7 +30,7 @@ for epochs in EPOCHS:
                         for gamma in GAMMA:
 
                             # Add arguments
-                            args = argparse.ArgumentParser().parse_args()
+                            args = parse(None)
                             args.epochs = epochs
                             args.batch_size = batch_size
                             args.policy_noise = policy_noise
@@ -37,13 +38,15 @@ for epochs in EPOCHS:
                             args.learning_rate = learning_rate
                             args.hidden_units = hidden_units
                             args.gamma = gamma
+                            args.buffer_size = 200000
+                            args.id = id
 
                             print("Job running: "+str(id))
 
                             # Save prints to log file
                             with open(PATH+str(id)+'.log', 'w') as f:
                                 with redirect_stdout(f):
-                                    main(args)
+                                    train_td3(args, TD3Net, 1)
 
                             id += 1
 

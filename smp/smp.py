@@ -7,8 +7,8 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 import tensorflow as tf
 from tensorflow.keras.activations import tanh
 
-from smp_utils import reparam_action, parse, train_td3
-from base_models import TD3Critic, MLPBase
+from smp.smp_utils import reparam_action, parse, train_td3
+from smp.base_models import TD3Critic, MLPBase
 
 
 def convert_mono_to_modular_state(mono_state):

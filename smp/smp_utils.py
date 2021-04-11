@@ -33,8 +33,8 @@ def parse(args):
     parser.add_argument("--learning_rate", type=float)
     parser.add_argument("--hidden_units", type=int)
     parser.add_argument("--gamma", type=float)
-    parser.add_argument("--buffer_size", default=2, type=int)
-    parser.add_argument("--sample_size", default=2, type=int)
+    parser.add_argument("--buffer_size", default=200000, type=int)
+    parser.add_argument("--sample_size", default=1048, type=int)
     parser.add_argument("--saving_dir", default="results_test", type=str)
 
     return parser.parse_args()
@@ -59,6 +59,12 @@ def train_td3(args, model, action_dimension=None):
     buffer_size = args.buffer_size # 10e6 in their repo, not possible with our ram
     epochs = args.epochs
     saving_path = os.getcwd() + "/" + args.saving_dir
+    try:
+        id = args.id
+        saving_path = saving_path + "/" + str(id)
+    except AttributeError:
+        pass
+
     saving_after = 5
     sample_size = args.sample_size
     optim_batch_size = args.batch_size
@@ -70,6 +76,9 @@ def train_td3(args, model, action_dimension=None):
     policy_noise_clip = .5
     msg_dim = args.msg_dim # 32 in their repo
     learning_rate = args.learning_rate
+    prefilled_buffer = 10000
+
+    assert prefilled_buffer <= buffer_size
 
     save_args(args, saving_path)
 
@@ -91,7 +100,7 @@ def train_td3(args, model, action_dimension=None):
         model,
         'BipedalWalker-v3',
         num_parallel=(os.cpu_count() - 1),
-        total_steps=150,
+        total_steps=1000,
         action_sampling_type="continuous_normal_diagonal",
         is_tf=True,
         model_kwargs=model_kwargs
@@ -117,7 +126,7 @@ def train_td3(args, model, action_dimension=None):
 
     # fill buffer
     print("Filling buffer before training..")
-    while len(manager.buffer.buffer[manager.buffer.keys[0]]) < manager.buffer.size:
+    while len(manager.buffer.buffer[manager.buffer.keys[0]]) < prefilled_buffer:
         # Gives you state action reward trajectories
         data = manager.get_data()
         manager.store_in_buffer(data)
@@ -125,6 +134,9 @@ def train_td3(args, model, action_dimension=None):
     # track time while training
     timer = time.time()
     last_t = timer
+
+    # track last rewards
+    rewards = []
 
     target_agent = manager.get_agent()
     for e in range(epochs):
@@ -215,10 +227,26 @@ def train_td3(args, model, action_dimension=None):
                 target_agent.set_weights(new_weights)
 
         reward = manager.test(test_steps, evaluation_measure="reward")
+        rewards.append(np.mean(reward))
+
         manager.update_aggregator(loss=total_loss, reward=reward)
         print(
             f"epoch ::: {e}  loss ::: {total_loss}   avg reward ::: {np.mean(reward)}"
         )
+
+        # Very early stopping
+        if e < 10:
+            if np.mean(rewards) < 1:
+                print("Stopped after %d because average reward of all runs so far is only %f"
+                      % (e, np.mean(rewards[-10:])))
+                return
+
+        # Early stopping
+        if e > 30:
+            if np.mean(rewards[-10:]) < -0.5 or np.mean(rewards[-10:]) < np.mean(rewards[-20:-10]):
+                print("Stopped after %d because average reward of last ten epochs is lower than of the ten epochs before that %f"
+                      % (e, np.mean(rewards[-10:])))
+                return
 
         if e % saving_after == 0:
             manager.save_model(saving_path, e)
