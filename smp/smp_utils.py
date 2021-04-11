@@ -41,6 +41,8 @@ def parse(args):
 
 
 def save_args(args, saving_path):
+    if not os.path.isdir(saving_path):
+        os.makedirs(saving_path)
     with open(saving_path + "/args.txt", "w") as f:
         f.write(args.__str__())
 
