@@ -40,6 +40,11 @@ def parse(args):
     return parser.parse_args()
 
 
+def save_args(args, saving_path):
+    with open(saving_path + "/args.txt", "w") as f:
+        f.write(args.__str__())
+
+
 def train_td3(args, model, action_dimension=None):
 
     print(args)
@@ -63,6 +68,8 @@ def train_td3(args, model, action_dimension=None):
     policy_noise_clip = .5
     msg_dim = args.msg_dim # 32 in their repo
     learning_rate = args.learning_rate
+
+    save_args(args, saving_path)
 
     env_test_instance = gym.make('BipedalWalker-v3')
     if action_dimension is None:
