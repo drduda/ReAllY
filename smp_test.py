@@ -8,7 +8,7 @@ import ray
 if __name__ == "__main__":
     hidden_units = 64
     msg_dim = 16
-    model_path = os.getcwd() + "/smp_results_config8_bigger_buffer"
+    model_path = os.getcwd() + "/smp_results_config8_withlidar"
 
     ray.init(log_to_driver=False)
 
