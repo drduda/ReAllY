@@ -5,7 +5,7 @@ import os
 # Module to test grid search
 from smp import main
 
-PATH = '../grid_search/'
+PATH = './grid_search/'
 if not os.path.isdir(PATH):
     os.mkdir(PATH)
 
