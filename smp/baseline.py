@@ -84,6 +84,10 @@ class TD3Net(tf.keras.Model):
         return super(TD3Net, self).get_config()
 
 
+def main(args):
+    train_td3(args, TD3Net)
+
+
 if __name__ == "__main__":
     args = parse(sys.argv[1:])
-    train_td3(args, TD3Net)
+    main(args)

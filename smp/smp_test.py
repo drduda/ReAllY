@@ -28,10 +28,10 @@ def main(args):
     env_test_instance = gym.make('BipedalWalker-v3')
 
     if args.baseline:
-        from baseline import TD3Net
-        action_dimension = copy(env_test_instance.action_space.shape)
+        from smp.baseline import TD3Net
+        action_dimension = copy(env_test_instance.action_space.shape[0])
     else:
-        from smp import TD3Net
+        from smp.smp import TD3Net
         action_dimension = 1
 
     model_kwargs = {
