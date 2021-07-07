@@ -1,6 +1,8 @@
 # One Policy to Control Them All
 ![blub](https://github.com/drduda/ReAllY/blob/master/images/salto.gif)
-We implemented the paper [One Policy to Control Them All](https://arxiv.org/pdf/2007.04976v1.pdf) with the OpenAI gym environment [**BipedalWalker**](https://gym.openai.com/envs/BipedalWalker-v2/). The main idea of the paper is to use the **same** *Shared Modular Policy (SMP)* for all actuators of an kinetic agent and let the actuators **communicate** with each other in order to enable **global coordination**. We are the first, who use a *SMP* for the Bidpeal Walker environment. 
+
+We implemented the **deep reinforcement learning** paper [One Policy to Control Them All](https://arxiv.org/pdf/2007.04976v1.pdf) with the OpenAI gym environment [**BipedalWalker**](https://gym.openai.com/envs/BipedalWalker-v2/). The main idea of the paper is to use the **same** *Shared Modular Policy (SMP)* for all actuators of an kinetic agent and let the actuators **communicate** with each other in order to enable **global coordination**. We are the first, who use a *SMP* for the Bidpeal Walker environment. Our implementation uses - and is forked from - the ReAlly framework from the University Osnabrueck lecture *Deep Reinforcement Learning*.
+
 For a quick overview about our results, have a look at [this video](https://github.com/drduda/ReAllY/blob/master/show_performance.mp4). 
 For a detailed graphical conceptual overview about the paper as well as a scientific comparision between the baseline and shared modular, have a look at our [report](https://github.com/drduda/ReAllY/blob/master/DRL_project__One_policy_to_control_them_all.pdf). 
 
@@ -23,7 +25,7 @@ Note that command line arguments are needed. For further information check the `
 
 ## Result Folders (chronologically following creation date)
 Each run was based on configuration 8 from our best grid search result which can be found in 
-```grid_search/results_1.md```.
+```results/grid_search/results_1.md```.
 
 1. ```grid_search/results_1.md```: summarized results of our grid search 
 2. ```baseline_results```: Monolithic baseline model
