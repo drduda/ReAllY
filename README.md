@@ -1,4 +1,10 @@
-# Shared Modular Policy
+# One Policy to Control Them All
+![blub](https://github.com/drduda/ReAllY/blob/master/images/salto.gif)
+We implemented the paper [One Policy to Control Them All](https://arxiv.org/pdf/2007.04976v1.pdf) with the OpenAI gym environment [**BipedalWalker**](https://gym.openai.com/envs/BipedalWalker-v2/). The main idea of the paper is to use the **same** *Shared Modular Policy (SMP)* for all actuators of an kinetic agent and let the actuators **communicate** with each other in order to enable **global coordination**. We are the first, who use a *SMP* for the Bidpeal Walker environment. 
+For a quick overview about our results, have a look at [this video](https://github.com/drduda/ReAllY/blob/master/show_performance.mp4). 
+For a detailed graphical conceptual overview about the paper as well as a scientific comparision between the baseline and shared modular, have a look at our [report](https://github.com/drduda/ReAllY/blob/master/DRL_project__One_policy_to_control_them_all.pdf). 
+
+## Run
 
 All relevant scripts are in the ```smp``` package. 
 
@@ -25,3 +31,5 @@ Each run was based on configuration 8 from our best grid search result which can
 4. ```smp_results_config8_bigger_buffer``` increased buffer size to 100,000
 5. ```smp_results_moreepochs``` increased number of epochs to 150
 6. ```smp_results_config8_withlidar```: added lidar to states
+
+Authors: Niklas Dettmer & Marko Duda
