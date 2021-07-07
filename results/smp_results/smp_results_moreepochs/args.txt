@@ -1,0 +1,1 @@
+Namespace(batch_size=32, buffer_size=100000, epochs=150, gamma=0.98, hidden_units=128, learning_rate=0.0004, msg_dim=1, policy_noise=0.5, sample_size=256, saving_dir='smp_results_moreepochs')
